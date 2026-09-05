@@ -383,7 +383,7 @@
     let pdfFileName = "document.pdf";
     let currentPageNum = 1;
     let totalPages = 1;
-    let currentScale = 1.25;
+    let currentScale = 1.0;
     let fabricCanvas = null;
 
     // เครื่องมือปัจจุบัน
@@ -819,6 +819,7 @@
         }).promise;
 
         fabricCanvas.setDimensions({ width: viewport.width, height: viewport.height });
+        fabricCanvas.setZoom(currentScale);
 
         fabricCanvas.clear();
         undoStack.length = 0;
@@ -827,13 +828,19 @@
 
         if (pageAnnotations[pageNum]) {
           isPerformingUndoRedo = true;
-          fabricCanvas.loadFromJSON(pageAnnotations[pageNum], () => {
+          const savedData = JSON.parse(JSON.stringify(pageAnnotations[pageNum]));
+          if (savedData.viewportTransform) delete savedData.viewportTransform;
+          fabricCanvas.loadFromJSON(savedData, () => {
+            fabricCanvas.setDimensions({ width: viewport.width, height: viewport.height });
+            fabricCanvas.setZoom(currentScale);
             fabricCanvas.renderAll();
             applyToolSettings();
             isPerformingUndoRedo = false;
             saveHistory();
           });
         } else {
+          fabricCanvas.setDimensions({ width: viewport.width, height: viewport.height });
+          fabricCanvas.setZoom(currentScale);
           saveHistory();
           applyToolSettings();
         }
@@ -1015,16 +1022,25 @@
             viewport: vp
           }).promise;
 
-          // วาด Annotation (ไฮไลต์, ถมดำ, ข้อความ, รูปทรง)
+          // วาด Annotation (ไฮไลต์, ถมดำ, ข้อความ, รูปทรง) ซิงก์สเกล 2x เป๊ะ
           const pageData = pageAnnotations[i];
           let annotPngUrl = null;
           if (pageData && pageData.objects && pageData.objects.length > 0) {
             const tempCanvasEl = document.createElement('canvas');
-            const tempFabric = new fabric.StaticCanvas(tempCanvasEl);
-            tempFabric.setDimensions({ width: vp.width, height: vp.height });
+            tempCanvasEl.width = vp.width;
+            tempCanvasEl.height = vp.height;
+            const tempFabric = new fabric.StaticCanvas(tempCanvasEl, {
+              width: vp.width,
+              height: vp.height
+            });
+
+            const savedData = JSON.parse(JSON.stringify(pageData));
+            if (savedData.viewportTransform) delete savedData.viewportTransform;
 
             await new Promise((resolve) => {
-              tempFabric.loadFromJSON(pageData, () => {
+              tempFabric.loadFromJSON(savedData, () => {
+                tempFabric.setDimensions({ width: vp.width, height: vp.height });
+                tempFabric.setZoom(scaleFactor);
                 tempFabric.renderAll();
                 resolve();
               });
@@ -1248,9 +1264,11 @@
       isPerformingUndoRedo = true;
       const current = undoStack.pop();
       redoStack.push(current);
-      const prev = undoStack[undoStack.length - 1];
+      const prev = JSON.parse(undoStack[undoStack.length - 1]);
+      if (prev.viewportTransform) delete prev.viewportTransform;
 
-      fabricCanvas.loadFromJSON(JSON.parse(prev), () => {
+      fabricCanvas.loadFromJSON(prev, () => {
+        fabricCanvas.setZoom(currentScale);
         fabricCanvas.renderAll();
         applyToolSettings();
         isPerformingUndoRedo = false;
@@ -1261,10 +1279,12 @@
     function redo() {
       if (!fabricCanvas || redoStack.length === 0) return;
       isPerformingUndoRedo = true;
-      const next = redoStack.pop();
-      undoStack.push(next);
+      const next = JSON.parse(redoStack.pop());
+      undoStack.push(JSON.stringify(next));
+      if (next.viewportTransform) delete next.viewportTransform;
 
-      fabricCanvas.loadFromJSON(JSON.parse(next), () => {
+      fabricCanvas.loadFromJSON(next, () => {
+        fabricCanvas.setZoom(currentScale);
         fabricCanvas.renderAll();
         applyToolSettings();
         isPerformingUndoRedo = false;
@@ -1337,19 +1357,19 @@
 
       // ซูม
       addSafeListener('btn-zoom-in', 'click', () => {
-        if (currentScale < 2.5) {
+        if (currentScale < 3.0) {
           currentScale += 0.25;
           const zl = document.getElementById('zoom-level');
-          if (zl) zl.textContent = `${Math.round((currentScale / 1.25) * 100)}%`;
+          if (zl) zl.textContent = `${Math.round(currentScale * 100)}%`;
           renderPage(currentPageNum);
         }
       });
 
       addSafeListener('btn-zoom-out', 'click', () => {
-        if (currentScale > 0.6) {
+        if (currentScale > 0.5) {
           currentScale -= 0.25;
           const zl = document.getElementById('zoom-level');
-          if (zl) zl.textContent = `${Math.round((currentScale / 1.25) * 100)}%`;
+          if (zl) zl.textContent = `${Math.round(currentScale * 100)}%`;
           renderPage(currentPageNum);
         }
       });
