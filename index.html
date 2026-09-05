@@ -3,20 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PDF Editor & Redaction Tool</title>
+  <title>PDF Editor - Native Engine</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
-  <style>
-    /* บังคับซ้อน Canvas ให้ตรงกันเป๊ะ 100% ไม่เหลื่อม ไม่เคลื่อน */
-    .canvas-container {
-      position: absolute !important;
-      top: 0 !important;
-      left: 0 !important;
-    }
-  </style>
 </head>
 <body class="bg-slate-900 text-slate-100 flex flex-col h-screen overflow-hidden select-none font-sans">
 
@@ -27,7 +18,7 @@
       <span class="font-bold text-sm md:text-base">PDF Editor Pro</span>
     </div>
 
-    <!-- Controls -->
+    <!-- Page Controls -->
     <div class="flex items-center space-x-2 text-xs bg-slate-900 py-1 px-3 rounded-lg border border-slate-700">
       <button id="btn-prev" class="p-1 hover:bg-slate-700 rounded"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
       <span>หน้า <span id="page-num" class="text-indigo-400 font-bold">1</span> / <span id="total-pages">1</span></span>
@@ -51,191 +42,199 @@
     </div>
   </header>
 
-  <!-- Secondary Toolbar -->
-  <nav class="bg-slate-800/90 border-b border-slate-700 px-4 py-2 flex flex-wrap items-center justify-between gap-2 z-10 text-xs">
+  <!-- Toolbar -->
+  <nav class="bg-slate-800/90 border-b border-slate-700 px-4 py-2 flex items-center justify-between gap-2 z-10 text-xs">
     <div class="flex items-center space-x-1 bg-slate-900 p-1 rounded-lg border border-slate-700">
-      <button id="tool-select" class="tool-btn active-tool p-1.5 rounded hover:bg-slate-700" title="เลือก/ย้าย"><i data-lucide="mouse-pointer" class="w-4 h-4"></i></button>
       <button id="tool-blackout" class="tool-btn p-1.5 rounded bg-indigo-600 text-white font-bold flex items-center space-x-1" title="ถมดำทึบ 100%">
         <i data-lucide="shield-alert" class="w-4 h-4 text-amber-400"></i><span>ถมดำทึบ</span>
       </button>
-      <button id="tool-highlighter" class="tool-btn p-1.5 rounded hover:bg-slate-700 text-yellow-300" title="ไฮไลต์สี่เหลี่ยม"><i data-lucide="highlighter" class="w-4 h-4"></i></button>
-      <button id="tool-text" class="tool-btn p-1.5 rounded hover:bg-slate-700 text-sky-400" title="เพิ่มข้อความ"><i data-lucide="type" class="w-4 h-4"></i></button>
-      <button id="tool-rect" class="tool-btn p-1.5 rounded hover:bg-slate-700" title="สี่เหลี่ยม"><i data-lucide="square" class="w-4 h-4"></i></button>
-      <button id="tool-arrow" class="tool-btn p-1.5 rounded hover:bg-slate-700" title="ลูกศร"><i data-lucide="arrow-up-right" class="w-4 h-4"></i></button>
+      <button id="tool-highlighter" class="tool-btn p-1.5 rounded hover:bg-slate-700 text-yellow-300" title="ไฮไลต์สีเหลือง"><i data-lucide="highlighter" class="w-4 h-4"></i><span>ไฮไลต์</span></button>
+      <button id="tool-text" class="tool-btn p-1.5 rounded hover:bg-slate-700 text-sky-400" title="พิมพ์ข้อความ"><i data-lucide="type" class="w-4 h-4"></i><span>ข้อความ</span></button>
+      <button id="tool-rect" class="tool-btn p-1.5 rounded hover:bg-slate-700" title="กรอบสี่เหลี่ยม"><i data-lucide="square" class="w-4 h-4"></i><span>กรอบ</span></button>
     </div>
 
-    <!-- Actions -->
-    <div class="flex items-center space-x-2">
-      <button id="btn-duplicate" class="bg-sky-600 hover:bg-sky-500 text-white px-2.5 py-1 rounded flex items-center space-x-1" title="คัดลอก"><i data-lucide="copy" class="w-3.5 h-3.5"></i><span>คัดลอก</span></button>
-      <button id="btn-delete" class="bg-rose-900/40 text-rose-300 hover:bg-rose-900/80 px-2.5 py-1 rounded flex items-center space-x-1"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i><span>ลบ</span></button>
-    </div>
+    <button id="btn-clear" class="bg-rose-900/40 text-rose-300 hover:bg-rose-900/80 px-2.5 py-1 rounded flex items-center space-x-1">
+      <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i><span>ล้างหน้านี้</span>
+    </button>
   </nav>
 
-  <!-- Workspace Container -->
+  <!-- Canvas Workspace -->
   <main class="flex-1 overflow-auto bg-slate-950 flex items-center justify-center p-4 relative">
     <div id="canvas-wrapper" class="relative bg-white shadow-2xl">
-      <canvas id="pdf-render-canvas" class="block"></canvas>
-      <canvas id="fabric-canvas" class="block"></canvas>
+      <!-- PDF Layer -->
+      <canvas id="pdf-canvas" class="absolute top-0 left-0 block z-0"></canvas>
+      <!-- Drawing Layer -->
+      <canvas id="draw-canvas" class="relative block z-10 cursor-crosshair"></canvas>
     </div>
   </main>
 
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-    let pdfDoc = null, originalPdfBytes = null, fileName = "document.pdf";
+    let pdfDoc = null, fileName = "document.pdf";
     let pageNum = 1, totalPages = 1, currentScale = 1.25;
-    let fabricCanvas = null, currentTool = 'blackout';
-    const pageAnnotations = {};
+    let currentTool = 'blackout';
+    const pageShapes = {}; // เก็บข้อมูลการวาดในแต่ละหน้า { pageNum: [shapes] }
 
-    function initFabric() {
-      if (fabricCanvas) fabricCanvas.dispose();
+    const pdfCanvas = document.getElementById('pdf-canvas');
+    const drawCanvas = document.getElementById('draw-canvas');
+    const pdfCtx = pdfCanvas.getContext('2d');
+    const drawCtx = drawCanvas.getContext('2d');
+
+    let isDrawing = false, startX = 0, startY = 0, currentShape = null;
+
+    // การวาดภาพลงบน Draw Canvas
+    function redrawShapes() {
+      drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+      const shapes = pageShapes[pageNum] || [];
       
-      fabricCanvas = new fabric.Canvas('fabric-canvas', { 
-        selection: true,
-        preserveObjectStacking: true 
-      });
-
-      let isDrawing = false, startX = 0, startY = 0, activeShape = null;
-
-      fabricCanvas.on('mouse:down', (o) => {
-        if (currentTool === 'select') return;
-        const pointer = fabricCanvas.getPointer(o.e);
-        startX = pointer.x;
-        startY = pointer.y;
-        isDrawing = true;
-
-        if (currentTool === 'blackout') {
-          activeShape = new fabric.Rect({
-            left: startX, top: startY, width: 0, height: 0,
-            fill: '#000000', opacity: 1, selectable: false
-          });
-        } else if (currentTool === 'highlighter') {
-          activeShape = new fabric.Rect({
-            left: startX, top: startY, width: 0, height: 0,
-            fill: '#facc15', opacity: 0.4, selectable: false
-          });
-        } else if (currentTool === 'rect') {
-          activeShape = new fabric.Rect({
-            left: startX, top: startY, width: 0, height: 0,
-            fill: 'transparent', stroke: '#f43f5e', strokeWidth: 3, selectable: false
-          });
-        } else if (currentTool === 'text') {
-          const text = new fabric.IText('CONFIDENTIAL', {
-            left: startX, top: startY, fontSize: 18, fill: '#ffffff', backgroundColor: '#000000'
-          });
-          fabricCanvas.add(text);
-          fabricCanvas.setActiveObject(text);
-          isDrawing = false;
-          return;
-        }
-        if (activeShape) fabricCanvas.add(activeShape);
-      });
-
-      fabricCanvas.on('mouse:move', (o) => {
-        if (!isDrawing || !activeShape) return;
-        const pointer = fabricCanvas.getPointer(o.e);
-        const w = Math.abs(startX - pointer.x);
-        const h = Math.abs(startY - pointer.y);
-        activeShape.set({
-          left: Math.min(startX, pointer.x),
-          top: Math.min(startY, pointer.y),
-          width: w, height: h
-        });
-        fabricCanvas.renderAll();
-      });
-
-      fabricCanvas.on('mouse:up', () => {
-        if (!isDrawing) return;
-        isDrawing = false;
-        if (activeShape) {
-          activeShape.setCoords();
-          activeShape.selectable = (currentTool === 'select');
-          activeShape = null;
-        }
-      });
+      shapes.forEach(shape => drawSingleShape(shape));
+      if (currentShape) drawSingleShape(currentShape);
     }
 
+    function drawSingleShape(shape) {
+      drawCtx.save();
+      if (shape.type === 'blackout') {
+        drawCtx.fillStyle = '#000000';
+        drawCtx.fillRect(shape.x, shape.y, shape.w, shape.h);
+      } else if (shape.type === 'highlighter') {
+        drawCtx.fillStyle = 'rgba(250, 204, 21, 0.4)';
+        drawCtx.fillRect(shape.x, shape.y, shape.w, shape.h);
+      } else if (shape.type === 'rect') {
+        drawCtx.strokeStyle = '#f43f5e';
+        drawCtx.lineWidth = 3;
+        drawCtx.strokeRect(shape.x, shape.y, shape.w, shape.h);
+      } else if (shape.type === 'text') {
+        drawCtx.fillStyle = '#000000';
+        drawCtx.fillRect(shape.x, shape.y - 18, drawCtx.measureText(shape.text).width + 10, 24);
+        drawCtx.fillStyle = '#ffffff';
+        drawCtx.font = '16px sans-serif';
+        drawCtx.fillText(shape.text, shape.x + 5, shape.y);
+      }
+      drawCtx.restore();
+    }
+
+    // Event Mouse สำหรับวาดรูปทรง
+    drawCanvas.addEventListener('mousedown', (e) => {
+      const rect = drawCanvas.getBoundingClientRect();
+      startX = e.clientX - rect.left;
+      startY = e.clientY - rect.top;
+      isDrawing = true;
+
+      if (currentTool === 'text') {
+        const text = prompt('ใส่ข้อความที่ต้องการพิมพ์:', 'CONFIDENTIAL');
+        if (text) {
+          if (!pageShapes[pageNum]) pageShapes[pageNum] = [];
+          pageShapes[pageNum].push({ type: 'text', x: startX, y: startY, text });
+          redrawShapes();
+        }
+        isDrawing = false;
+      }
+    });
+
+    drawCanvas.addEventListener('mousemove', (e) => {
+      if (!isDrawing) return;
+      const rect = drawCanvas.getBoundingClientRect();
+      const currentX = e.clientX - rect.left;
+      const currentY = e.clientY - rect.top;
+
+      const w = currentX - startX;
+      const h = currentY - startY;
+
+      currentShape = {
+        type: currentTool,
+        x: w < 0 ? currentX : startX,
+        y: h < 0 ? currentY : startY,
+        w: Math.abs(w),
+        h: Math.abs(h)
+      };
+      redrawShapes();
+    });
+
+    drawCanvas.addEventListener('mouseup', () => {
+      if (!isDrawing) return;
+      isDrawing = false;
+      if (currentShape) {
+        if (!pageShapes[pageNum]) pageShapes[pageNum] = [];
+        pageShapes[pageNum].push(currentShape);
+        currentShape = null;
+        redrawShapes();
+      }
+    });
+
+    // เรนเดอร์หน้า PDF
     async function renderPage(num) {
       if (!pdfDoc) return;
-      if (fabricCanvas) pageAnnotations[pageNum] = fabricCanvas.toJSON();
-
       pageNum = num;
       document.getElementById('page-num').textContent = pageNum;
 
       const page = await pdfDoc.getPage(pageNum);
       const viewport = page.getViewport({ scale: currentScale });
 
-      const pdfCanvas = document.getElementById('pdf-render-canvas');
-      const ctx = pdfCanvas.getContext('2d');
       pdfCanvas.width = viewport.width;
       pdfCanvas.height = viewport.height;
+      drawCanvas.width = viewport.width;
+      drawCanvas.height = viewport.height;
 
       const wrapper = document.getElementById('canvas-wrapper');
       wrapper.style.width = viewport.width + 'px';
       wrapper.style.height = viewport.height + 'px';
 
-      // 1. เรนเดอร์ PDF ลงเลเยอร์ล่าง
-      await page.render({ canvasContext: ctx, viewport }).promise;
-
-      // 2. ปรับขนาด Fabric Canvas ทับชั้นบน
-      fabricCanvas.setDimensions({ width: viewport.width, height: viewport.height });
-      fabricCanvas.clear();
-
-      if (pageAnnotations[pageNum]) {
-        fabricCanvas.loadFromJSON(pageAnnotations[pageNum], () => {
-          fabricCanvas.forEachObject(o => o.selectable = (currentTool === 'select'));
-          fabricCanvas.renderAll();
-        });
-      }
+      await page.render({ canvasContext: pdfCtx, viewport }).promise;
+      redrawShapes();
     }
 
     async function loadPDF(arrayBuffer, name) {
-      originalPdfBytes = arrayBuffer.slice(0);
       fileName = name || "document.pdf";
-      
-      // อ่านไฟล์พร้อมปลดล็อก Encryption
       pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer, ignoreEncryption: true }).promise;
       totalPages = pdfDoc.numPages;
       document.getElementById('total-pages').textContent = totalPages;
-      
-      initFabric();
       await renderPage(1);
     }
 
     async function exportPDF() {
       if (!pdfDoc) return;
-      if (fabricCanvas) pageAnnotations[pageNum] = fabricCanvas.toJSON();
 
       const { PDFDocument } = PDFLib;
       const newPdf = await PDFDocument.create();
 
       for (let i = 1; i <= totalPages; i++) {
         const page = await pdfDoc.getPage(i);
-        // ใช้สเกลเดียวกับที่กำลังแสดงบนหน้าจอ เพื่อป้องกันตำแหน่งเคลื่อน 100%
         const viewport = page.getViewport({ scale: currentScale });
 
-        const mergeCanvas = document.createElement('canvas');
-        mergeCanvas.width = viewport.width;
-        mergeCanvas.height = viewport.height;
-        const mCtx = mergeCanvas.getContext('2d');
+        const exportCanvas = document.createElement('canvas');
+        exportCanvas.width = viewport.width;
+        exportCanvas.height = viewport.height;
+        const eCtx = exportCanvas.getContext('2d');
 
-        // วาดหน้า PDF
-        await page.render({ canvasContext: mCtx, viewport }).promise;
+        // 1. วาดหน้า PDF
+        await page.render({ canvasContext: eCtx, viewport }).promise;
 
-        // วาดเลเยอร์แถบดำ / ข้อความ ทับลงไป
-        if (pageAnnotations[i]) {
-          const tempFabric = new fabric.StaticCanvas(null, { width: viewport.width, height: viewport.height });
-          await new Promise(resolve => tempFabric.loadFromJSON(pageAnnotations[i], resolve));
-          
-          const overlayImg = new Image();
-          overlayImg.src = tempFabric.toDataURL();
-          await new Promise(resolve => overlayImg.onload = resolve);
-          mCtx.drawImage(overlayImg, 0, 0);
-          tempFabric.dispose();
-        }
+        // 2. วาดรอยถมดำ/รูปทรงทับลงไปโดยตรง
+        const shapes = pageShapes[i] || [];
+        shapes.forEach(shape => {
+          eCtx.save();
+          if (shape.type === 'blackout') {
+            eCtx.fillStyle = '#000000';
+            eCtx.fillRect(shape.x, shape.y, shape.w, shape.h);
+          } else if (shape.type === 'highlighter') {
+            eCtx.fillStyle = 'rgba(250, 204, 21, 0.4)';
+            eCtx.fillRect(shape.x, shape.y, shape.w, shape.h);
+          } else if (shape.type === 'rect') {
+            eCtx.strokeStyle = '#f43f5e';
+            eCtx.lineWidth = 3;
+            eCtx.strokeRect(shape.x, shape.y, shape.w, shape.h);
+          } else if (shape.type === 'text') {
+            eCtx.fillStyle = '#000000';
+            eCtx.fillRect(shape.x, shape.y - 18, eCtx.measureText(shape.text).width + 10, 24);
+            eCtx.fillStyle = '#ffffff';
+            eCtx.font = '16px sans-serif';
+            eCtx.fillText(shape.text, shape.x + 5, shape.y);
+          }
+          eCtx.restore();
+        });
 
-        // ฝังเข้า PDF ใหม่
-        const pagePng = mergeCanvas.toDataURL('image/png');
+        const pagePng = exportCanvas.toDataURL('image/png');
         const embeddedImg = await newPdf.embedPng(pagePng);
         const newPage = newPdf.addPage([viewport.width, viewport.height]);
         newPage.drawImage(embeddedImg, { x: 0, y: 0, width: viewport.width, height: viewport.height });
@@ -245,10 +244,9 @@
       const blob = new Blob([pdfBytes], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
 
-      // ดาวน์โหลดไฟล์ทันที
       const a = document.createElement('a');
       a.href = url;
-      a.download = fileName.replace(/\.pdf$/i, '') + '_redacted.pdf';
+      a.download = fileName.replace(/\.pdf$/i, '') + '_edited.pdf';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -269,7 +267,6 @@
     document.getElementById('btn-prev').onclick = () => { if (pageNum > 1) renderPage(pageNum - 1); };
     document.getElementById('btn-next').onclick = () => { if (pageNum < totalPages) renderPage(pageNum + 1); };
 
-    // Zoom
     document.getElementById('btn-zoom-in').onclick = () => {
       if (currentScale < 2.5) {
         currentScale += 0.25;
@@ -286,8 +283,7 @@
       }
     };
 
-    // Tools
-    const tools = ['select', 'blackout', 'highlighter', 'text', 'rect', 'arrow'];
+    const tools = ['blackout', 'highlighter', 'text', 'rect'];
     tools.forEach(tool => {
       const btn = document.getElementById('tool-' + tool);
       if (btn) {
@@ -298,28 +294,13 @@
             if (b) b.classList.remove('bg-indigo-600', 'text-white');
           });
           btn.classList.add('bg-indigo-600', 'text-white');
-          fabricCanvas.isDrawingMode = false;
-          fabricCanvas.forEachObject(o => o.selectable = (tool === 'select'));
         };
       }
     });
 
-    document.getElementById('btn-duplicate').onclick = () => {
-      const active = fabricCanvas.getActiveObject();
-      if (active) {
-        active.clone((cloned) => {
-          cloned.set({ left: active.left + 15, top: active.top + 15 });
-          fabricCanvas.add(cloned);
-          fabricCanvas.setActiveObject(cloned);
-        });
-      }
-    };
-
-    document.getElementById('btn-delete').onclick = () => {
-      const active = fabricCanvas.getActiveObjects();
-      active.forEach(o => fabricCanvas.remove(o));
-      fabricCanvas.discardActiveObject();
-      fabricCanvas.renderAll();
+    document.getElementById('btn-clear').onclick = () => {
+      pageShapes[pageNum] = [];
+      redrawShapes();
     };
 
     lucide.createIcons();
