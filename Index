@@ -1,0 +1,1454 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>PDF Editor - ไฮไลต์ & รูปทรงเรขาคณิต</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- PDF.js สำหรับเรนเดอร์เอกสาร PDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <!-- Fabric.js สำหรับการวาด ไฮไลต์ รูปทรง และข้อความ -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+  <!-- PDF-Lib สำหรับประมวลผลและส่งออกไฟล์ PDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Google Fonts Sarabun -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  
+  <style>
+    body {
+      font-family: 'Sarabun', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      touch-action: manipulation;
+    }
+    /* ป้องกันการเลื่อนหน้าจอขณะวาดบนแท็บเล็ต */
+    .touch-drawing {
+      touch-action: none !important;
+    }
+    /* การซ้อนทับกันอย่างแม่นยำของ PDF Canvas และ Fabric Canvas */
+    #canvas-wrapper {
+      position: relative;
+      margin: auto;
+      box-shadow: 0 12px 30px -5px rgba(0, 0, 0, 0.4), 0 8px 12px -6px rgba(0, 0, 0, 0.3);
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #pdf-render-canvas {
+      position: absolute;
+      left: 0;
+      top: 0;
+      z-index: 1;
+      pointer-events: none;
+      display: block;
+    }
+    .canvas-container {
+      position: absolute !important;
+      left: 0 !important;
+      top: 0 !important;
+      z-index: 2 !important;
+      display: block !important;
+    }
+    /* สไตล์ปุ่มเครื่องมือ */
+    .tool-btn.active {
+      background-color: #4f46e5;
+      color: #ffffff;
+      box-shadow: 0 2px 8px rgba(79, 70, 229, 0.4);
+    }
+    /* สไตล์ scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #475569;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 flex flex-col h-screen overflow-hidden">
+
+  <header class="h-14 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-3 md:px-5 shrink-0 z-30">
+    <div class="flex items-center space-x-3">
+      <div class="bg-indigo-600 text-white p-2 rounded-xl shadow-md flex items-center justify-center">
+        <i data-lucide="file-edit" class="w-5 h-5"></i>
+      </div>
+      <div>
+        <h1 class="font-bold text-sm md:text-base leading-none text-white">PDF Editor</h1>
+        <p class="text-[11px] text-slate-400 hidden sm:block mt-0.5">ไฮไลต์ตรง • ถมดำทึบ • รูปทรง • พิมพ์ข้อความ</p>
+      </div>
+    </div>
+
+    <!-- ส่วนควบคุมหน้าและการซูม -->
+    <div class="flex items-center space-x-1 sm:space-x-2 bg-slate-800/80 py-1 px-2 md:px-3 rounded-xl border border-slate-700/60">
+      <button id="btn-prev-page" class="p-1 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition" title="หน้าก่อนหน้า">
+        <i data-lucide="chevron-left" class="w-4 h-4"></i>
+      </button>
+      <span class="text-xs md:text-sm font-medium px-1 whitespace-nowrap">
+        หน้า <span id="current-page-num" class="text-indigo-400 font-bold">1</span> / <span id="total-pages">1</span>
+      </span>
+      <button id="btn-next-page" class="p-1 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition" title="หน้าถัดไป">
+        <i data-lucide="chevron-right" class="w-4 h-4"></i>
+      </button>
+      <div class="h-4 w-px bg-slate-700 mx-1"></div>
+      <button id="btn-zoom-out" class="p-1 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition" title="ย่อขนาด">
+        <i data-lucide="zoom-out" class="w-4 h-4"></i>
+      </button>
+      <span id="zoom-level" class="text-xs font-mono w-10 text-center text-slate-300">100%</span>
+      <button id="btn-zoom-in" class="p-1 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition" title="ขยายขนาด">
+        <i data-lucide="zoom-in" class="w-4 h-4"></i>
+      </button>
+    </div>
+
+    <!-- ปุ่มเลือกไฟล์ & ดาวน์โหลด -->
+    <div class="flex items-center space-x-2">
+      <input type="file" id="pdf-file-input" accept="application/pdf" class="hidden" />
+      <button id="btn-upload" class="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 text-xs md:text-sm font-medium px-3 py-1.5 rounded-xl border border-slate-700 transition">
+        <i data-lucide="upload" class="w-4 h-4 text-indigo-400"></i>
+        <span class="hidden md:inline">เปิดไฟล์ PDF</span>
+      </button>
+      <button id="btn-sample-pdf" class="hidden lg:flex items-center space-x-1 bg-slate-800/80 hover:bg-slate-700 text-xs px-2.5 py-1.5 rounded-xl border border-slate-700/80 text-amber-300 transition" title="เปิดเอกสารตัวอย่างทดสอบ">
+        <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+        <span>ตัวอย่าง</span>
+      </button>
+      <button id="btn-download" class="flex items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs md:text-sm font-semibold px-3.5 py-1.5 rounded-xl shadow-lg shadow-indigo-600/30 transition">
+        <i data-lucide="download" class="w-4 h-4"></i>
+        <span>ดาวน์โหลด</span>
+      </button>
+    </div>
+  </header>
+
+  <nav class="bg-slate-900/95 border-b border-slate-800 px-3 md:px-5 py-2 flex flex-wrap items-center justify-between gap-2 z-20">
+    <!-- กลุ่มเครื่องมือวาดและเลือก -->
+    <div class="flex items-center space-x-1 bg-slate-950/70 p-1 rounded-xl border border-slate-800 overflow-x-auto max-w-full">
+      <button id="tool-select" class="tool-btn active px-2.5 py-1.5 rounded-lg flex items-center space-x-1 text-xs font-medium transition" title="เลือกและขยับวัตถุ (V)">
+        <i data-lucide="mouse-pointer" class="w-4 h-4"></i>
+        <span class="hidden sm:inline">เลือก</span>
+      </button>
+
+      <!-- ไฮไลต์แถบตรงแนวนอน -->
+      <button id="tool-highlight-strip" class="tool-btn px-2.5 py-1.5 rounded-lg flex items-center space-x-1 text-xs font-medium text-amber-300 hover:text-white transition" title="ไฮไลต์แนวนอนตรงเป๊ะ">
+        <i data-lucide="highlighter" class="w-4 h-4"></i>
+        <span>ไฮไลต์แถบตรง</span>
+      </button>
+
+      <!-- ไฮไลต์กล่องสี่เหลี่ยม -->
+      <button id="tool-highlight-box" class="tool-btn px-2 py-1.5 rounded-lg flex items-center space-x-1 text-xs font-medium hover:text-white transition" title="ไฮไลต์กล่องสี่เหลี่ยม">
+        <i data-lucide="box-select" class="w-4 h-4"></i>
+        <span class="hidden md:inline">ไฮไลต์กล่อง</span>
+      </button>
+
+      <!-- ถมดำทึบ 100% -->
+      <button id="tool-blackout" class="tool-btn px-2.5 py-1.5 rounded-lg flex items-center space-x-1 text-xs font-bold text-rose-300 hover:text-white transition" title="ถมดำทึบ 100% บังข้อความ/รูปภาพมิดชิด">
+        <i data-lucide="shield-alert" class="w-4 h-4"></i>
+        <span>ถมดำทึบ</span>
+      </button>
+
+      <!-- พิมพ์ข้อความ -->
+      <button id="tool-text" class="tool-btn px-2.5 py-1.5 rounded-lg flex items-center space-x-1 text-xs font-medium text-sky-300 hover:text-white transition" title="แตะบนหน้า PDF เพื่อพิมพ์ข้อความ">
+        <i data-lucide="type" class="w-4 h-4"></i>
+        <span>ข้อความ</span>
+      </button>
+
+      <div class="h-4 w-px bg-slate-800 mx-1"></div>
+
+      <!-- รูปทรงเรขาคณิต -->
+      <button id="tool-rect" class="tool-btn p-1.5 rounded-lg text-slate-300 hover:text-white transition" title="สี่เหลี่ยม">
+        <i data-lucide="square" class="w-4 h-4"></i>
+      </button>
+      <button id="tool-circle" class="tool-btn p-1.5 rounded-lg text-slate-300 hover:text-white transition" title="วงกลม / วงรี">
+        <i data-lucide="circle" class="w-4 h-4"></i>
+      </button>
+      <button id="tool-line" class="tool-btn p-1.5 rounded-lg text-slate-300 hover:text-white transition" title="เส้นตรง">
+        <i data-lucide="minus" class="w-4 h-4"></i>
+      </button>
+      <button id="tool-arrow" class="tool-btn p-1.5 rounded-lg text-slate-300 hover:text-white transition" title="ลูกศร">
+        <i data-lucide="arrow-up-right" class="w-4 h-4"></i>
+      </button>
+    </div>
+
+    <!-- กลุ่มตั้งค่าสีและขนาด -->
+    <div class="flex items-center flex-wrap gap-2 md:gap-3 bg-slate-950/70 p-1.5 rounded-xl border border-slate-800 text-xs">
+      
+      <!-- จานสีเส้น/ไฮไลต์ -->
+      <div class="flex items-center space-x-1.5">
+        <span class="text-slate-400">สี:</span>
+        <div class="flex items-center space-x-1">
+          <button class="color-preset w-5 h-5 rounded-full bg-yellow-400 ring-2 ring-transparent hover:scale-110 transition" data-color="#facc15" title="สีเหลือง"></button>
+          <button class="color-preset w-5 h-5 rounded-full bg-emerald-400 ring-2 ring-transparent hover:scale-110 transition" data-color="#34d399" title="สีเขียว"></button>
+          <button class="color-preset w-5 h-5 rounded-full bg-sky-400 ring-2 ring-transparent hover:scale-110 transition" data-color="#38bdf8" title="สีฟ้า"></button>
+          <button class="color-preset w-5 h-5 rounded-full bg-rose-500 ring-2 ring-transparent hover:scale-110 transition" data-color="#f43f5e" title="สีแดง/ชมพู"></button>
+          <button class="color-preset w-5 h-5 rounded-full bg-purple-500 ring-2 ring-transparent hover:scale-110 transition" data-color="#a855f7" title="สีม่วง"></button>
+          <button class="color-preset w-5 h-5 rounded-full bg-black border border-slate-600 ring-2 ring-transparent hover:scale-110 transition" data-color="#000000" title="สีดำ"></button>
+          <button class="color-preset w-5 h-5 rounded-full bg-white ring-2 ring-transparent hover:scale-110 transition" data-color="#ffffff" title="สีขาว"></button>
+          
+          <label class="cursor-pointer relative flex items-center justify-center w-5 h-5 rounded-full border border-slate-600 bg-gradient-to-tr from-pink-500 via-amber-400 to-indigo-500 hover:scale-110 transition" title="เลือกสีอื่นๆ">
+            <input type="color" id="stroke-color-picker" value="#facc15" class="opacity-0 absolute inset-0 cursor-pointer w-full h-full" />
+          </label>
+        </div>
+      </div>
+
+      <div class="h-4 w-px bg-slate-800 hidden sm:block"></div>
+
+      <!-- สีพื้นหลัง -->
+      <div id="fill-control-group" class="flex items-center space-x-1.5">
+        <span class="text-slate-400">สีพื้น:</span>
+        <select id="fill-type-select" class="bg-slate-800 text-xs border border-slate-700 rounded-lg px-2 py-1 text-slate-200 focus:outline-none focus:border-indigo-500">
+          <option value="none">ไม่มี (โปร่งใส)</option>
+          <option value="semi">โปร่งแสง (30%)</option>
+          <option value="solid">ทึบแสง (100%)</option>
+        </select>
+      </div>
+
+      <div class="h-4 w-px bg-slate-800 hidden sm:block"></div>
+
+      <!-- ขนาดความหนาเส้น / ฟอนต์ข้อความ -->
+      <div class="flex items-center space-x-1.5">
+        <span id="label-size" class="text-slate-400">ขนาด:</span>
+        <input type="range" id="stroke-width-slider" min="2" max="60" value="22" class="w-16 md:w-20 accent-indigo-500 cursor-pointer" />
+        <span id="stroke-width-val" class="text-xs font-mono text-slate-300 w-5">22</span>
+      </div>
+
+      <div class="h-4 w-px bg-slate-800 hidden md:block"></div>
+
+      <!-- ความโปร่งแสง -->
+      <div id="opacity-control-group" class="flex items-center space-x-1.5">
+        <span class="text-slate-400">ความจาง:</span>
+        <input type="range" id="opacity-slider" min="0.1" max="1" step="0.05" value="0.45" class="w-14 md:w-16 accent-indigo-500 cursor-pointer" />
+        <span id="opacity-val" class="text-xs font-mono text-slate-300 w-7">45%</span>
+      </div>
+    </div>
+
+    <!-- กลุ่มปุ่มจัดการวัตถุ: คัดลอก, เลิกทำ, ทำซ้ำ, ลบ -->
+    <div class="flex items-center space-x-1">
+      <button id="btn-duplicate" class="px-2.5 py-1.5 bg-sky-950/60 hover:bg-sky-900/60 border border-sky-800/60 text-sky-400 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center space-x-1" title="คัดลอก/ทำซ้ำกล่องข้อความหรือวัตถุที่เลือก (Ctrl+D)">
+        <i data-lucide="copy" class="w-4 h-4"></i>
+        <span class="text-xs font-medium">คัดลอก</span>
+      </button>
+      <button id="btn-undo" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition" title="เลิกทำ (Ctrl+Z)">
+        <i data-lucide="undo-2" class="w-4 h-4"></i>
+      </button>
+      <button id="btn-redo" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition" title="ทำซ้ำ (Ctrl+Y)">
+        <i data-lucide="redo-2" class="w-4 h-4"></i>
+      </button>
+      <button id="btn-delete-selected" class="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition" title="ลบวัตถุที่เลือก (Delete)">
+        <i data-lucide="trash-2" class="w-4 h-4"></i>
+      </button>
+      <button id="btn-clear-page" class="p-1.5 text-amber-400 hover:text-amber-300 hover:bg-amber-950/40 rounded-lg transition" title="ล้างการวาดในหน้านี้ทั้งหมด">
+        <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+      </button>
+    </div>
+  </nav>
+
+  <main id="viewport-container" class="flex-1 overflow-auto bg-slate-950/90 flex items-center justify-center p-4 relative">
+    
+    <!-- พื้นที่เรนเดอร์ PDF และ Fabric Canvas -->
+    <div id="canvas-wrapper" class="relative bg-white rounded shadow-2xl transition-transform origin-center">
+      <canvas id="pdf-render-canvas"></canvas>
+      <canvas id="fabric-canvas"></canvas>
+    </div>
+
+    <!-- หน้าต่างต้อนรับเมื่อยังไม่ได้เปิดไฟล์ (Empty State) -->
+    <div id="empty-state-modal" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/85 backdrop-blur-sm z-30 transition-opacity">
+      <div class="max-w-md w-full mx-4 p-8 bg-slate-900 border border-slate-800 rounded-2xl text-center shadow-2xl flex flex-col items-center">
+        <div class="w-16 h-16 bg-indigo-950/80 text-indigo-400 rounded-2xl flex items-center justify-center mb-4 ring-1 ring-indigo-700/50">
+          <i data-lucide="file-up" class="w-8 h-8"></i>
+        </div>
+        <h3 class="text-lg font-semibold text-white mb-1">ยังไม่มีเอกสาร PDF ที่เปิดอยู่</h3>
+        <p class="text-xs text-slate-400 mb-6 leading-relaxed">
+          เปิดไฟล์ PDF ของคุณ หรือทดลองใช้งานด้วยไฟล์ตัวอย่างเพื่อเริ่มทำการไฮไลต์ ถมดำ หรือวาดรูปทรงได้ทันที
+        </p>
+        <div class="flex flex-col sm:flex-row gap-3 w-full justify-center">
+          <button id="btn-empty-upload" class="flex items-center justify-center space-x-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium py-2.5 px-5 rounded-xl shadow-lg transition">
+            <i data-lucide="upload" class="w-4 h-4"></i>
+            <span>เลือกไฟล์ PDF จากเครื่อง</span>
+          </button>
+          <button id="btn-empty-sample" class="flex items-center justify-center space-x-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium py-2.5 px-4 rounded-xl border border-slate-700 transition">
+            <i data-lucide="file-text" class="w-4 h-4 text-amber-400"></i>
+            <span>ลองเปิดไฟล์ตัวอย่าง</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- โหลดเดอร์แสดงความคืบหน้า (Loading Modal) -->
+    <div id="loading-modal" class="hidden absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center z-50">
+      <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-2xl flex flex-col items-center max-w-xs text-center">
+        <div class="w-10 h-10 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin mb-3"></div>
+        <span id="loading-text" class="text-sm font-medium text-slate-200">กำลังประมวลผล...</span>
+      </div>
+    </div>
+
+    <div id="download-success-modal" class="hidden fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-3 md:p-6 z-50 overflow-y-auto">
+      <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-5 md:p-6 shadow-2xl flex flex-col my-auto text-slate-100 max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
+          <div class="flex items-center space-x-2.5">
+            <div class="w-9 h-9 bg-emerald-950/80 text-emerald-400 rounded-xl flex items-center justify-center border border-emerald-700/50">
+              <i data-lucide="check-circle" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <h3 class="font-bold text-base text-white">บันทึกเอกสารเรียบร้อยแล้ว</h3>
+              <p class="text-[11px] text-slate-400">เลือกช่องทางบันทึกที่สะดวกสำหรับคุณ</p>
+            </div>
+          </div>
+          <button id="btn-close-modal-top" class="p-1.5 text-slate-400 hover:text-white rounded-lg transition">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <!-- ตัวเลือกบันทึกไฟล์ -->
+        <div class="space-y-2.5 mb-4">
+          <!-- บันทึกผ่านเมนูพิมพ์ (ได้ผล 100% บนแท็บเล็ต) -->
+          <button id="btn-modal-print-pdf" class="w-full flex items-center justify-between bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-semibold py-3 px-4 rounded-xl shadow-lg shadow-indigo-900/30 transition text-left group">
+            <div class="flex items-center space-x-3">
+              <div class="p-2 bg-white/10 rounded-lg">
+                <i data-lucide="printer" class="w-5 h-5 text-indigo-200"></i>
+              </div>
+              <div>
+                <div class="text-sm font-bold flex items-center space-x-1.5">
+                  <span>บันทึกเป็น PDF (ผ่านเมนูพิมพ์)</span>
+                  <span class="bg-amber-400 text-slate-950 text-[10px] font-extrabold px-1.5 py-0.2 rounded-full">แนะนำบนแท็บเล็ต</span>
+                </div>
+                <p class="text-[11px] text-indigo-100/80 font-normal">บน iPad/Android ให้เลือก "บันทึกเป็น PDF" หรือแชร์ลงแอปไฟล์</p>
+              </div>
+            </div>
+            <i data-lucide="chevron-right" class="w-5 h-5 text-indigo-300 group-hover:translate-x-1 transition-transform shrink-0"></i>
+          </button>
+
+          <!-- เปิดดูในแท็บใหม่ -->
+          <button id="btn-modal-open-viewer" class="w-full flex items-center justify-between bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-medium py-3 px-4 rounded-xl transition text-left group">
+            <div class="flex items-center space-x-3">
+              <div class="p-2 bg-slate-700 rounded-lg text-sky-400">
+                <i data-lucide="external-link" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <div class="text-sm font-semibold">เปิดดู PDF เต็มหน้าจอ (แท็บใหม่)</div>
+                <p class="text-[11px] text-slate-400">เปิดไฟล์บนเบราว์เซอร์เพื่อกดเซฟหรือแชร์ต่อ</p>
+              </div>
+            </div>
+            <i data-lucide="chevron-right" class="w-5 h-5 text-slate-400 group-hover:translate-x-1 transition-transform shrink-0"></i>
+          </button>
+
+          <!-- ดาวน์โหลดไฟล์ตรง -->
+          <a id="btn-modal-direct-download" href="#" class="w-full flex items-center justify-between bg-slate-800/80 hover:bg-slate-700 border border-slate-700/80 text-white font-medium py-3 px-4 rounded-xl transition text-left group">
+            <div class="flex items-center space-x-3">
+              <div class="p-2 bg-slate-700 rounded-lg text-emerald-400">
+                <i data-lucide="download" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <div class="text-sm font-semibold">ดาวน์โหลดไฟล์ตรง (.pdf)</div>
+                <p class="text-[11px] text-slate-400">สำหรับคอมพิวเตอร์ หรือ Android ที่อนุญาตบันทึกไฟล์</p>
+              </div>
+            </div>
+            <i data-lucide="chevron-right" class="w-5 h-5 text-slate-400 group-hover:translate-x-1 transition-transform shrink-0"></i>
+          </a>
+        </div>
+
+        <!-- แตะค้างเพื่อบันทึกรูปภาพสำรอง -->
+        <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-3 mb-2">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-semibold text-slate-300 flex items-center space-x-1.5">
+              <i data-lucide="image" class="w-3.5 h-3.5 text-amber-400"></i>
+              <span>ภาพหน้าเอกสารที่แก้ไขแล้ว (แตะค้างเพื่อเซฟรูป)</span>
+            </span>
+            <span class="text-[10px] text-slate-500">แตะค้างที่รูป &gt; บันทึกภาพ</span>
+          </div>
+          <div id="modal-preview-images" class="flex gap-2 overflow-x-auto py-1 max-h-40">
+            <!-- ภาพแต่ละหน้าจะแสดงที่นี่ -->
+          </div>
+        </div>
+
+        <button id="btn-close-download-modal" class="w-full text-center text-xs text-slate-400 hover:text-white transition py-2 mt-1">
+          กลับไปแก้ไขเอกสารต่อ
+        </button>
+      </div>
+    </div>
+
+    <!-- Toast แจ้งเตือนสถานะ -->
+    <div id="toast-message" class="hidden fixed bottom-5 right-5 bg-slate-800 border border-slate-700 text-slate-100 text-xs md:text-sm px-4 py-2.5 rounded-xl shadow-2xl flex items-center space-x-2 z-50 transition-all duration-300 transform translate-y-4 opacity-0">
+      <i id="toast-icon" data-lucide="info" class="w-4 h-4 text-indigo-400"></i>
+      <span id="toast-text">ข้อความ</span>
+    </div>
+  </main>
+
+  <script>
+    // ตั้งค่า Worker ของ PDF.js
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    // ตัวแปรสถานะหลักของแอปพลิเคชัน
+    let pdfDoc = null;
+    let originalPdfBytes = null;
+    let pdfFileName = "document.pdf";
+    let currentPageNum = 1;
+    let totalPages = 1;
+    let currentScale = 1.25;
+    let fabricCanvas = null;
+
+    // เครื่องมือปัจจุบัน
+    let currentTool = 'select';
+    let strokeColor = '#facc15';
+    let strokeWidth = 22;
+    let opacity = 0.45;
+    let fillType = 'none';
+
+    // ประวัติ Annotation และ Undo/Redo
+    const pageAnnotations = {};
+    const undoStack = [];
+    const redoStack = [];
+    let isPerformingUndoRedo = false;
+
+    // การลากรูปทรง
+    let isDrawingShape = false;
+    let shapeStartX = 0;
+    let shapeStartY = 0;
+    let activeShape = null;
+
+    // ตัวแปรเก็บไฟล์ส่งออก
+    let currentExportedBlob = null;
+    let currentExportedUrl = null;
+    let currentExportedBase64 = null;
+    let renderedPageImages = [];
+
+    // ฟังก์ชันแปลงสี Hex เป็น RGBA
+    function hexToRgba(hex, alpha = 1) {
+      hex = hex.replace('#', '');
+      if (hex.length === 3) {
+        hex = hex.split('').map(c => c + c).join('');
+      }
+      const num = parseInt(hex, 16);
+      const r = (num >> 16) & 255;
+      const g = (num >> 8) & 255;
+      const b = num & 255;
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+
+    // ฟังก์ชันหาสีพื้นหลัง
+    function getShapeFillColor() {
+      if (fillType === 'none') return 'transparent';
+      if (fillType === 'semi') return hexToRgba(strokeColor, 0.3);
+      if (fillType === 'solid') return hexToRgba(strokeColor, 1);
+      return 'transparent';
+    }
+
+    // แสดง Toast แจ้งเตือน
+    let toastTimer = null;
+    function showToast(message, type = 'info') {
+      const toast = document.getElementById('toast-message');
+      const toastText = document.getElementById('toast-text');
+      const toastIcon = document.getElementById('toast-icon');
+      if (!toast || !toastText || !toastIcon) return;
+
+      toastText.textContent = message;
+      if (type === 'success') {
+        toastIcon.setAttribute('data-lucide', 'check-circle-2');
+        toastIcon.className = 'w-4 h-4 text-emerald-400';
+      } else if (type === 'error') {
+        toastIcon.setAttribute('data-lucide', 'alert-circle');
+        toastIcon.className = 'w-4 h-4 text-rose-400';
+      } else {
+        toastIcon.setAttribute('data-lucide', 'info');
+        toastIcon.className = 'w-4 h-4 text-sky-400';
+      }
+      lucide.createIcons();
+
+      toast.classList.remove('hidden', 'translate-y-4', 'opacity-0');
+      toast.classList.add('flex', 'translate-y-0', 'opacity-100');
+
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toast.classList.remove('translate-y-0', 'opacity-100');
+        toast.classList.add('translate-y-4', 'opacity-0');
+        setTimeout(() => toast.classList.add('hidden'), 300);
+      }, 3000);
+    }
+
+    // แสดง Loading Modal
+    function showLoading(show, message = 'กำลังประมวลผล...') {
+      const modal = document.getElementById('loading-modal');
+      const text = document.getElementById('loading-text');
+      if (!modal || !text) return;
+      text.textContent = message;
+      if (show) modal.classList.remove('hidden');
+      else modal.classList.add('hidden');
+    }
+
+    function initFabric() {
+      if (fabricCanvas) {
+        fabricCanvas.dispose();
+      }
+
+      fabricCanvas = new fabric.Canvas('fabric-canvas', {
+        isDrawingMode: false,
+        selection: true,
+        preserveObjectStacking: true,
+      });
+
+      fabricCanvas.on('object:added', () => {
+        if (!isPerformingUndoRedo && !isDrawingShape) saveHistory();
+      });
+      fabricCanvas.on('object:modified', () => {
+        if (!isPerformingUndoRedo) saveHistory();
+      });
+      fabricCanvas.on('selection:created', updateSelectionButtonsState);
+      fabricCanvas.on('selection:updated', updateSelectionButtonsState);
+      fabricCanvas.on('selection:cleared', updateSelectionButtonsState);
+
+      fabricCanvas.on('mouse:down', handleMouseDownOnCanvas);
+      fabricCanvas.on('mouse:move', handleMouseMoveOnCanvas);
+      fabricCanvas.on('mouse:up', handleMouseUpOnCanvas);
+
+      applyToolSettings();
+    }
+
+    function updateSelectionButtonsState() {
+      const btnDelete = document.getElementById('btn-delete-selected');
+      const btnDuplicate = document.getElementById('btn-duplicate');
+      const hasSelection = fabricCanvas && fabricCanvas.getActiveObject();
+      if (btnDelete) btnDelete.disabled = !hasSelection;
+      if (btnDuplicate) btnDuplicate.disabled = !hasSelection;
+    }
+
+    // คัดลอกและทำซ้ำวัตถุ/กล่องข้อความ
+    function duplicateSelectedObject() {
+      if (!fabricCanvas) return;
+      const activeObj = fabricCanvas.getActiveObject();
+      if (!activeObj) {
+        showToast('กรุณาเลือกกล่องข้อความหรือวัตถุก่อน', 'info');
+        return;
+      }
+
+      activeObj.clone((cloned) => {
+        fabricCanvas.discardActiveObject();
+        cloned.set({
+          left: cloned.left + 24,
+          top: cloned.top + 24,
+          evented: true,
+          selectable: true,
+        });
+
+        if (cloned.type === 'activeSelection') {
+          cloned.canvas = fabricCanvas;
+          cloned.forEachObject((obj) => fabricCanvas.add(obj));
+          cloned.setCoords();
+        } else {
+          fabricCanvas.add(cloned);
+        }
+
+        fabricCanvas.setActiveObject(cloned);
+        fabricCanvas.requestRenderAll();
+        saveHistory();
+        updateSelectionButtonsState();
+        showToast('คัดลอกเรียบร้อยแล้ว!', 'success');
+      });
+    }
+
+    // ตั้งค่าตามเครื่องมือที่เลือก
+    function applyToolSettings() {
+      if (!fabricCanvas) return;
+
+      const isSelectMode = (currentTool === 'select');
+      fabricCanvas.isDrawingMode = false;
+      fabricCanvas.selection = isSelectMode;
+
+      fabricCanvas.forEachObject((obj) => {
+        obj.selectable = isSelectMode;
+        obj.evented = isSelectMode;
+      });
+
+      const wrapper = document.getElementById('canvas-wrapper');
+      if (wrapper) {
+        if (isSelectMode) wrapper.classList.remove('touch-drawing');
+        else wrapper.classList.add('touch-drawing');
+      }
+
+      const fillControl = document.getElementById('fill-control-group');
+      const opacityControl = document.getElementById('opacity-control-group');
+      const labelSize = document.getElementById('label-size');
+
+      if (fillControl && opacityControl && labelSize) {
+        if (currentTool === 'text') {
+          labelSize.textContent = 'ฟอนต์:';
+          fillControl.classList.add('opacity-30', 'pointer-events-none');
+          opacityControl.classList.add('opacity-30', 'pointer-events-none');
+        } else if (currentTool === 'blackout') {
+          fillControl.classList.add('opacity-30', 'pointer-events-none');
+          opacityControl.classList.add('opacity-30', 'pointer-events-none');
+        } else if (currentTool === 'highlight-strip' || currentTool === 'highlight-box') {
+          labelSize.textContent = 'ขนาด:';
+          fillControl.classList.add('opacity-30', 'pointer-events-none');
+          opacityControl.classList.remove('opacity-30', 'pointer-events-none');
+        } else {
+          labelSize.textContent = 'ขนาด:';
+          fillControl.classList.remove('opacity-30', 'pointer-events-none');
+          opacityControl.classList.remove('opacity-30', 'pointer-events-none');
+        }
+      }
+
+      fabricCanvas.renderAll();
+    }
+
+    function handleMouseDownOnCanvas(o) {
+      if (currentTool === 'select') return;
+
+      const pointer = fabricCanvas.getPointer(o.e);
+      shapeStartX = pointer.x;
+      shapeStartY = pointer.y;
+
+      // เพิ่มตัวอักษร
+      if (currentTool === 'text') {
+        const textObj = new fabric.IText('พิมพ์ข้อความที่นี่...', {
+          left: shapeStartX,
+          top: shapeStartY,
+          fontFamily: 'Sarabun',
+          fontSize: Math.max(12, parseInt(strokeWidth)),
+          fill: hexToRgba(strokeColor, 1),
+          selectable: true,
+          editable: true,
+        });
+
+        fabricCanvas.add(textObj);
+        fabricCanvas.setActiveObject(textObj);
+        textObj.enterEditing();
+        textObj.selectAll();
+        fabricCanvas.renderAll();
+        saveHistory();
+
+        setTool('select');
+        return;
+      }
+
+      isDrawingShape = true;
+
+      if (currentTool === 'highlight-strip') {
+        activeShape = new fabric.Rect({
+          left: shapeStartX,
+          top: shapeStartY - (strokeWidth / 2),
+          width: 0,
+          height: parseFloat(strokeWidth),
+          fill: hexToRgba(strokeColor, opacity),
+          selectable: false,
+          evented: false,
+          strokeWidth: 0,
+        });
+      } else if (currentTool === 'highlight-box') {
+        activeShape = new fabric.Rect({
+          left: shapeStartX,
+          top: shapeStartY,
+          width: 0,
+          height: 0,
+          fill: hexToRgba(strokeColor, opacity),
+          selectable: false,
+          evented: false,
+          strokeWidth: 0,
+        });
+      } else if (currentTool === 'blackout') {
+        activeShape = new fabric.Rect({
+          left: shapeStartX,
+          top: shapeStartY,
+          width: 0,
+          height: 0,
+          fill: '#000000',
+          opacity: 1.0,
+          selectable: false,
+          evented: false,
+          strokeWidth: 0,
+        });
+      } else if (currentTool === 'rect') {
+        activeShape = new fabric.Rect({
+          left: shapeStartX,
+          top: shapeStartY,
+          width: 0,
+          height: 0,
+          fill: getShapeFillColor(),
+          stroke: hexToRgba(strokeColor, 1),
+          strokeWidth: Math.max(1, Math.round(strokeWidth / 6)),
+          selectable: false,
+          evented: false,
+        });
+      } else if (currentTool === 'circle') {
+        activeShape = new fabric.Ellipse({
+          left: shapeStartX,
+          top: shapeStartY,
+          rx: 0,
+          ry: 0,
+          fill: getShapeFillColor(),
+          stroke: hexToRgba(strokeColor, 1),
+          strokeWidth: Math.max(1, Math.round(strokeWidth / 6)),
+          selectable: false,
+          evented: false,
+        });
+      } else if (currentTool === 'line' || currentTool === 'arrow') {
+        activeShape = new fabric.Line([shapeStartX, shapeStartY, shapeStartX, shapeStartY], {
+          stroke: hexToRgba(strokeColor, 1),
+          strokeWidth: Math.max(1, Math.round(strokeWidth / 6)),
+          selectable: false,
+          evented: false,
+        });
+      }
+
+      if (activeShape) {
+        fabricCanvas.add(activeShape);
+      }
+    }
+
+    function handleMouseMoveOnCanvas(o) {
+      if (!isDrawingShape || !activeShape) return;
+      const pointer = fabricCanvas.getPointer(o.e);
+
+      if (currentTool === 'highlight-strip') {
+        const left = Math.min(shapeStartX, pointer.x);
+        const width = Math.abs(shapeStartX - pointer.x);
+        activeShape.set({ left, width });
+      } else if (currentTool === 'highlight-box' || currentTool === 'blackout' || currentTool === 'rect') {
+        const left = Math.min(shapeStartX, pointer.x);
+        const top = Math.min(shapeStartY, pointer.y);
+        const width = Math.abs(shapeStartX - pointer.x);
+        const height = Math.abs(shapeStartY - pointer.y);
+        activeShape.set({ left, top, width, height });
+      } else if (currentTool === 'circle') {
+        const left = Math.min(shapeStartX, pointer.x);
+        const top = Math.min(shapeStartY, pointer.y);
+        const rx = Math.abs(shapeStartX - pointer.x) / 2;
+        const ry = Math.abs(shapeStartY - pointer.y) / 2;
+        activeShape.set({ left, top, rx, ry });
+      } else if (currentTool === 'line' || currentTool === 'arrow') {
+        activeShape.set({ x2: pointer.x, y2: pointer.y });
+      }
+
+      fabricCanvas.renderAll();
+    }
+
+    function handleMouseUpOnCanvas(o) {
+      if (!isDrawingShape) return;
+      isDrawingShape = false;
+
+      if (activeShape) {
+        if (currentTool === 'arrow') {
+          const pointer = fabricCanvas.getPointer(o.e);
+          const x1 = shapeStartX;
+          const y1 = shapeStartY;
+          const x2 = pointer.x;
+          const y2 = pointer.y;
+          const dx = x2 - x1;
+          const dy = y2 - y1;
+          const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+          const headSize = Math.max(12, strokeWidth * 0.7);
+
+          const head = new fabric.Triangle({
+            left: x2,
+            top: y2,
+            originX: 'center',
+            originY: 'center',
+            angle: angle + 90,
+            width: headSize,
+            height: headSize,
+            fill: hexToRgba(strokeColor, 1),
+            selectable: false,
+          });
+
+          fabricCanvas.remove(activeShape);
+          const arrowGroup = new fabric.Group([activeShape, head], {
+            selectable: false,
+            evented: false,
+          });
+          fabricCanvas.add(arrowGroup);
+          activeShape = arrowGroup;
+        }
+
+        activeShape.setCoords();
+        saveHistory();
+        activeShape = null;
+      }
+    }
+
+    function setTool(toolName) {
+      currentTool = toolName;
+      document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+      const toolMap = {
+        'select': 'tool-select',
+        'highlight-strip': 'tool-highlight-strip',
+        'highlight-box': 'tool-highlight-box',
+        'blackout': 'tool-blackout',
+        'text': 'tool-text',
+        'rect': 'tool-rect',
+        'circle': 'tool-circle',
+        'line': 'tool-line',
+        'arrow': 'tool-arrow'
+      };
+      if (toolMap[toolName]) {
+        const btn = document.getElementById(toolMap[toolName]);
+        if (btn) btn.classList.add('active');
+      }
+      applyToolSettings();
+    }
+
+    function saveCurrentPageAnnotations() {
+      if (!fabricCanvas) return;
+      pageAnnotations[currentPageNum] = fabricCanvas.toJSON();
+    }
+
+    async function renderPage(pageNum) {
+      if (!pdfDoc) return;
+      showLoading(true, `กำลังโหลดหน้า ${pageNum}...`);
+
+      try {
+        saveCurrentPageAnnotations();
+
+        const page = await pdfDoc.getPage(pageNum);
+        const viewport = page.getViewport({ scale: currentScale });
+
+        const pdfCanvas = document.getElementById('pdf-render-canvas');
+        const pdfContext = pdfCanvas.getContext('2d');
+        
+        pdfCanvas.width = viewport.width;
+        pdfCanvas.height = viewport.height;
+        pdfCanvas.style.width = `${viewport.width}px`;
+        pdfCanvas.style.height = `${viewport.height}px`;
+
+        const canvasWrapper = document.getElementById('canvas-wrapper');
+        if (canvasWrapper) {
+          canvasWrapper.style.width = `${viewport.width}px`;
+          canvasWrapper.style.height = `${viewport.height}px`;
+        }
+
+        await page.render({
+          canvasContext: pdfContext,
+          viewport: viewport,
+        }).promise;
+
+        fabricCanvas.setDimensions({ width: viewport.width, height: viewport.height });
+
+        fabricCanvas.clear();
+        undoStack.length = 0;
+        redoStack.length = 0;
+        updateUndoRedoButtons();
+
+        if (pageAnnotations[pageNum]) {
+          isPerformingUndoRedo = true;
+          fabricCanvas.loadFromJSON(pageAnnotations[pageNum], () => {
+            fabricCanvas.renderAll();
+            applyToolSettings();
+            isPerformingUndoRedo = false;
+            saveHistory();
+          });
+        } else {
+          saveHistory();
+          applyToolSettings();
+        }
+
+        const currEl = document.getElementById('current-page-num');
+        const prevEl = document.getElementById('btn-prev-page');
+        const nextEl = document.getElementById('btn-next-page');
+        if (currEl) currEl.textContent = pageNum;
+        if (prevEl) prevEl.disabled = (pageNum <= 1);
+        if (nextEl) nextEl.disabled = (pageNum >= totalPages);
+
+      } catch (err) {
+        console.error("เกิดข้อผิดพลาดในการแสดงผล:", err);
+        showToast("ไม่สามารถเรนเดอร์หน้านี้ได้: " + err.message, "error");
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    async function loadPdfDocument(arrayBuffer, fileName = "document.pdf") {
+      showLoading(true, "กำลังเปิดไฟล์ PDF...");
+      try {
+        originalPdfBytes = arrayBuffer.slice(0);
+        pdfFileName = fileName;
+
+        for (let key in pageAnnotations) delete pageAnnotations[key];
+
+        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+        pdfDoc = await loadingTask.promise;
+        totalPages = pdfDoc.numPages;
+        currentPageNum = 1;
+
+        const totalEl = document.getElementById('total-pages');
+        if (totalEl) totalEl.textContent = totalPages;
+
+        const emptyModal = document.getElementById('empty-state-modal');
+        if (emptyModal) {
+          emptyModal.classList.add('opacity-0', 'pointer-events-none');
+          setTimeout(() => emptyModal.classList.add('hidden'), 300);
+        }
+
+        initFabric();
+        await renderPage(currentPageNum);
+        showToast(`เปิดเอกสารสำเร็จ (${totalPages} หน้า)`, "success");
+      } catch (err) {
+        console.error("เปิด PDF ล้มเหลว:", err);
+        showToast("ไม่สามารถเปิดไฟล์ PDF นี้ได้", "error");
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    async function generateSamplePdf() {
+      showLoading(true, "กำลังสร้างเอกสารตัวอย่าง...");
+      try {
+        const { PDFDocument } = PDFLib;
+        const sampleDoc = await PDFDocument.create();
+        const page1 = sampleDoc.addPage([595.28, 841.89]);
+
+        // ใช้ HTML5 Canvas เรนเดอร์ข้อความภาษาไทยเพื่อป้องกัน WinAnsi encoding error ของ pdf-lib
+        const canvas = document.createElement('canvas');
+        canvas.width = 1190;
+        canvas.height = 1684;
+        const ctx = canvas.getContext('2d');
+
+        // พื้นหลังสีขาว
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // หัวเรื่อง
+        ctx.fillStyle = '#4f46e5';
+        ctx.fillRect(80, 80, 16, 56);
+
+        ctx.fillStyle = '#0f172a';
+        ctx.font = 'bold 36px Sarabun, sans-serif';
+        ctx.fillText('เอกสารทดสอบ - PDF Editor & Annotator', 112, 122);
+
+        ctx.fillStyle = '#64748b';
+        ctx.font = '20px Sarabun, sans-serif';
+        ctx.fillText('ตัวอย่างเอกสารสำหรับทดสอบเครื่องมือไฮไลต์ ถมดำทึบ และวาดรูปทรงเรขาคณิต', 80, 175);
+
+        // เส้นคั่น
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(80, 205);
+        ctx.lineTo(1110, 205);
+        ctx.stroke();
+
+        // รายการข้อความทดสอบ
+        const sampleLines = [
+          '1. ไฮไลต์แถบตรง: คลิกแล้วลากแนวนอน เส้นตรงเป๊ะ ไม่เอียง ล็อกความสูงพอดีบรรทัด',
+          '2. ถมดำทึบ 100%: บดบังข้อความ ข้อมูลความลับ หรือรูปภาพด้านล่างได้อย่างมิดชิด',
+          '3. พิมพ์ข้อความ: แตะลงบนหน้ากระดาษเพื่อพิมพ์ตัวอักษร ปรับขนาดและสีได้',
+          '4. ปุ่มคัดลอก: แตะเลือกกล่องข้อความหรือวัตถุ แล้วกด "คัดลอก" เพื่อทำซ้ำได้ทันที',
+          '5. รูปทรงเรขาคณิต: สี่เหลี่ยม วงกลม เส้นตรง และลูกศรชี้นำ'
+        ];
+
+        ctx.fillStyle = '#1e293b';
+        ctx.font = '24px Sarabun, sans-serif';
+        let curY = 265;
+        sampleLines.forEach((text) => {
+          ctx.fillText(text, 80, curY);
+          curY += 58;
+        });
+
+        // กล่องทดสอบถมดำ
+        ctx.fillStyle = '#eff6ff';
+        ctx.strokeStyle = '#bfdbfe';
+        ctx.lineWidth = 3;
+        ctx.fillRect(80, curY + 20, 1030, 95);
+        ctx.strokeRect(80, curY + 20, 1030, 95);
+
+        ctx.fillStyle = '#b91c1c';
+        ctx.font = 'bold 26px Sarabun, sans-serif';
+        ctx.fillText('ข้อมูลความลับ: 8492-4921-9941 (ทดลองใช้เครื่องมือ "ถมดำทึบ" บังข้อความตรงนี้)', 110, curY + 78);
+
+        // กล่องพื้นที่ทดลองวาด
+        ctx.fillStyle = '#f8fafc';
+        ctx.strokeStyle = '#cbd5e1';
+        ctx.strokeRect(80, curY + 160, 1030, 280);
+
+        ctx.fillStyle = '#475569';
+        ctx.font = 'bold 22px Sarabun, sans-serif';
+        ctx.fillText('พื้นที่ทดลองวาดรูปทรงและใส่ลูกศร', 110, curY + 205);
+
+        ctx.font = '20px Sarabun, sans-serif';
+        ctx.fillStyle = '#94a3b8';
+        ctx.fillText('ลองใช้เครื่องมือ สี่เหลี่ยม, วงกลม หรือลูกศร วาดและปรับแต่งสีลงในกรอบนี้', 110, curY + 245);
+
+        // แปลงภาพจาก Canvas แล้วใส่ลงใน PDF Page
+        const samplePngUrl = canvas.toDataURL('image/png');
+        const embeddedImg = await sampleDoc.embedPng(samplePngUrl);
+        page1.drawImage(embeddedImg, {
+          x: 0,
+          y: 0,
+          width: 595.28,
+          height: 841.89,
+        });
+
+        const sampleBytes = await sampleDoc.save();
+        await loadPdfDocument(sampleBytes.buffer, "sample_document.pdf");
+      } catch (err) {
+        console.error(err);
+        showToast("สร้างตัวอย่างล้มเหลว: " + err.message, "error");
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    async function exportAnnotatedPdf() {
+      if (!originalPdfBytes) {
+        showToast("กรุณาเปิดไฟล์ PDF ก่อนดาวน์โหลด", "error");
+        return;
+      }
+
+      showLoading(true, "กำลังรวมเส้นวาดและไฮไลต์ลงในเอกสาร PDF...");
+      try {
+        saveCurrentPageAnnotations();
+
+        const { PDFDocument } = PDFLib;
+        const finalPdfDoc = await PDFDocument.load(originalPdfBytes);
+        const pages = finalPdfDoc.getPages();
+
+        renderedPageImages = [];
+
+        for (let i = 0; i < pages.length; i++) {
+          const pageIndex = i + 1;
+          const pdfPage = pages[i];
+          const { width, height } = pdfPage.getSize();
+          const pageData = pageAnnotations[pageIndex];
+
+          const originalPage = await pdfDoc.getPage(pageIndex);
+          const vp = originalPage.getViewport({ scale: 2.0 });
+
+          const mergedCanvas = document.createElement('canvas');
+          mergedCanvas.width = vp.width;
+          mergedCanvas.height = vp.height;
+          const mergedCtx = mergedCanvas.getContext('2d');
+
+          await originalPage.render({
+            canvasContext: mergedCtx,
+            viewport: vp
+          }).promise;
+
+          if (pageData && pageData.objects && pageData.objects.length > 0) {
+            const tempCanvasEl = document.createElement('canvas');
+            const tempFabric = new fabric.StaticCanvas(tempCanvasEl);
+            tempFabric.setDimensions({ width: vp.width, height: vp.height });
+
+            await new Promise((resolve) => {
+              tempFabric.loadFromJSON(pageData, () => {
+                tempFabric.renderAll();
+                resolve();
+              });
+            });
+
+            mergedCtx.drawImage(tempCanvasEl, 0, 0);
+
+            const annotPngUrl = tempFabric.toDataURL({ format: 'png', multiplier: 1 });
+            const pngImage = await finalPdfDoc.embedPng(annotPngUrl);
+            pdfPage.drawImage(pngImage, {
+              x: 0,
+              y: 0,
+              width: width,
+              height: height,
+            });
+
+            tempFabric.dispose();
+          }
+
+          renderedPageImages.push(mergedCanvas.toDataURL('image/png'));
+        }
+
+        const modifiedBytes = await finalPdfDoc.save();
+        if (currentExportedUrl) URL.revokeObjectURL(currentExportedUrl);
+
+        currentExportedBlob = new Blob([modifiedBytes], { type: 'application/pdf' });
+        currentExportedUrl = URL.createObjectURL(currentExportedBlob);
+
+        const reader = new FileReader();
+        reader.readAsDataURL(currentExportedBlob);
+        await new Promise(resolve => {
+          reader.onloadend = () => {
+            currentExportedBase64 = reader.result;
+            resolve();
+          };
+        });
+
+        const cleanName = pdfFileName.replace(/\.pdf$/i, '');
+        const outFileName = `${cleanName}_edited.pdf`;
+
+        const directDownloadBtn = document.getElementById('btn-modal-direct-download');
+        if (directDownloadBtn) {
+          directDownloadBtn.href = currentExportedBase64;
+          directDownloadBtn.download = outFileName;
+        }
+
+        const previewContainer = document.getElementById('modal-preview-images');
+        if (previewContainer) {
+          previewContainer.innerHTML = '';
+          renderedPageImages.forEach((imgUrl, idx) => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'flex-shrink-0 flex flex-col items-center';
+            wrapper.innerHTML = `
+              <img src="${imgUrl}" class="h-28 border border-slate-700 rounded shadow-md bg-white object-contain cursor-pointer hover:opacity-90 active:scale-95 transition" title="แตะค้างเพื่อบันทึกรูปภาพ" />
+              <span class="text-[10px] text-slate-400 mt-1">หน้า ${idx + 1}</span>
+            `;
+            previewContainer.appendChild(wrapper);
+          });
+        }
+
+        const successModal = document.getElementById('download-success-modal');
+        if (successModal) successModal.classList.remove('hidden');
+        lucide.createIcons();
+        showToast("เตรียมไฟล์เสร็จเรียบร้อยแล้ว!", "success");
+
+      } catch (err) {
+        console.error("ส่งออก PDF ล้มเหลว:", err);
+        showToast("เกิดข้อผิดพลาดในการบันทึก: " + err.message, "error");
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    function printPagesToPdf() {
+      if (!renderedPageImages || renderedPageImages.length === 0) {
+        showToast("ไม่พบข้อมูลหน้าเอกสาร กรุณาลองใหม่อีกครั้ง", "error");
+        return;
+      }
+
+      const printIframe = document.createElement('iframe');
+      printIframe.style.position = 'fixed';
+      printIframe.style.right = '0';
+      printIframe.style.bottom = '0';
+      printIframe.style.width = '0';
+      printIframe.style.height = '0';
+      printIframe.style.border = '0';
+      document.body.appendChild(printIframe);
+
+      const iframeDoc = printIframe.contentWindow.document;
+      iframeDoc.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>${pdfFileName.replace(/\.pdf$/i, '')}_edited</title>
+          <style>
+            @page {
+              size: auto;
+              margin: 0mm;
+            }
+            body {
+              margin: 0;
+              padding: 0;
+              background: #fff;
+            }
+            .page-container {
+              page-break-after: always;
+              page-break-inside: avoid;
+              width: 100vw;
+              height: 100vh;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            }
+            img {
+              max-width: 100%;
+              max-height: 100%;
+              object-fit: contain;
+              display: block;
+            }
+          </style>
+        </head>
+        <body>
+          ${renderedPageImages.map(img => `<div class="page-container"><img src="${img}" /></div>`).join('')}
+        </body>
+        </html>
+      `);
+      iframeDoc.close();
+
+      setTimeout(() => {
+        try {
+          printIframe.contentWindow.focus();
+          printIframe.contentWindow.print();
+        } catch (e) {
+          console.error("Print failed:", e);
+          window.print();
+        }
+        setTimeout(() => document.body.removeChild(printIframe), 2000);
+      }, 500);
+    }
+
+    function openPdfInNewWindow() {
+      if (!currentExportedBase64 && !currentExportedUrl) return;
+      const newWin = window.open();
+      if (newWin) {
+        newWin.document.write(`
+          <!DOCTYPE html>
+          <html>
+          <head><title>${pdfFileName}</title></head>
+          <body style="margin:0;background:#0f172a;display:flex;flex-direction:column;height:100vh;">
+            <div style="background:#1e293b;padding:10px 16px;color:#fff;font-family:sans-serif;display:flex;justify-content:space-between;align-items:center;">
+              <span>${pdfFileName} (แก้ไขแล้ว)</span>
+              <button onclick="window.print()" style="background:#4f46e5;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-weight:bold;cursor:pointer;">พิมพ์ / เซฟ PDF</button>
+            </div>
+            <iframe src="${currentExportedBase64 || currentExportedUrl}" style="border:none;flex:1;width:100%;height:100%;"></iframe>
+          </body>
+          </html>
+        `);
+      } else {
+        showToast("เบราว์เซอร์บล็อกหน้าต่างใหม่ กรุณากดปุ่ม 'บันทึกเป็น PDF'", "info");
+      }
+    }
+
+    function saveHistory() {
+      if (!fabricCanvas || isPerformingUndoRedo) return;
+      const json = JSON.stringify(fabricCanvas.toJSON());
+      undoStack.push(json);
+      if (undoStack.length > 30) undoStack.shift();
+      redoStack.length = 0;
+      updateUndoRedoButtons();
+    }
+
+    function undo() {
+      if (!fabricCanvas || undoStack.length <= 1) return;
+      isPerformingUndoRedo = true;
+      const current = undoStack.pop();
+      redoStack.push(current);
+      const prev = undoStack[undoStack.length - 1];
+
+      fabricCanvas.loadFromJSON(JSON.parse(prev), () => {
+        fabricCanvas.renderAll();
+        applyToolSettings();
+        isPerformingUndoRedo = false;
+        updateUndoRedoButtons();
+      });
+    }
+
+    function redo() {
+      if (!fabricCanvas || redoStack.length === 0) return;
+      isPerformingUndoRedo = true;
+      const next = redoStack.pop();
+      undoStack.push(next);
+
+      fabricCanvas.loadFromJSON(JSON.parse(next), () => {
+        fabricCanvas.renderAll();
+        applyToolSettings();
+        isPerformingUndoRedo = false;
+        updateUndoRedoButtons();
+      });
+    }
+
+    function updateUndoRedoButtons() {
+      const btnUndo = document.getElementById('btn-undo');
+      const btnRedo = document.getElementById('btn-redo');
+      if (btnUndo) btnUndo.disabled = (undoStack.length <= 1);
+      if (btnRedo) btnRedo.disabled = (redoStack.length === 0);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+
+      // ฟังก์ชันช่วยลงทะเบียน Event อย่างปลอดภัย ป้องกัน null error
+      const addSafeListener = (id, event, handler) => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener(event, handler);
+      };
+
+      const fileInput = document.getElementById('pdf-file-input');
+      addSafeListener('btn-upload', 'click', () => fileInput && fileInput.click());
+      addSafeListener('btn-empty-upload', 'click', () => fileInput && fileInput.click());
+
+      if (fileInput) {
+        fileInput.addEventListener('change', (e) => {
+          const file = e.target.files[0];
+          if (file && file.type === 'application/pdf') {
+            const reader = new FileReader();
+            reader.onload = function () {
+              loadPdfDocument(this.result, file.name);
+            };
+            reader.readAsArrayBuffer(file);
+          } else if (file) {
+            showToast('กรุณาเลือกไฟล์ PDF เท่านั้น', 'error');
+          }
+        });
+      }
+
+      addSafeListener('btn-sample-pdf', 'click', generateSamplePdf);
+      addSafeListener('btn-empty-sample', 'click', generateSamplePdf);
+      addSafeListener('btn-download', 'click', exportAnnotatedPdf);
+      addSafeListener('btn-modal-print-pdf', 'click', printPagesToPdf);
+      addSafeListener('btn-modal-open-viewer', 'click', openPdfInNewWindow);
+
+      const closeModal = () => {
+        const m = document.getElementById('download-success-modal');
+        if (m) m.classList.add('hidden');
+      };
+      addSafeListener('btn-close-download-modal', 'click', closeModal);
+      addSafeListener('btn-close-modal-top', 'click', closeModal);
+
+      // การเปลี่ยนหน้า
+      addSafeListener('btn-prev-page', 'click', () => {
+        if (currentPageNum > 1) {
+          currentPageNum--;
+          renderPage(currentPageNum);
+        }
+      });
+
+      addSafeListener('btn-next-page', 'click', () => {
+        if (currentPageNum < totalPages) {
+          currentPageNum++;
+          renderPage(currentPageNum);
+        }
+      });
+
+      // ซูม
+      addSafeListener('btn-zoom-in', 'click', () => {
+        if (currentScale < 2.5) {
+          currentScale += 0.25;
+          const zl = document.getElementById('zoom-level');
+          if (zl) zl.textContent = `${Math.round((currentScale / 1.25) * 100)}%`;
+          renderPage(currentPageNum);
+        }
+      });
+
+      addSafeListener('btn-zoom-out', 'click', () => {
+        if (currentScale > 0.6) {
+          currentScale -= 0.25;
+          const zl = document.getElementById('zoom-level');
+          if (zl) zl.textContent = `${Math.round((currentScale / 1.25) * 100)}%`;
+          renderPage(currentPageNum);
+        }
+      });
+
+      // เครื่องมือ
+      const toolMap = {
+        'tool-select': 'select',
+        'tool-highlight-strip': 'highlight-strip',
+        'tool-highlight-box': 'highlight-box',
+        'tool-blackout': 'blackout',
+        'tool-text': 'text',
+        'tool-rect': 'rect',
+        'tool-circle': 'circle',
+        'tool-line': 'line',
+        'tool-arrow': 'arrow',
+      };
+
+      Object.entries(toolMap).forEach(([btnId, tName]) => {
+        addSafeListener(btnId, 'click', () => setTool(tName));
+      });
+
+      // จานสี
+      document.querySelectorAll('.color-preset').forEach(preset => {
+        preset.addEventListener('click', (e) => {
+          strokeColor = e.target.dataset.color;
+          const picker = document.getElementById('stroke-color-picker');
+          if (picker) picker.value = strokeColor;
+          updateSelectedObjectStyle();
+          applyToolSettings();
+        });
+      });
+
+      const strokePicker = document.getElementById('stroke-color-picker');
+      if (strokePicker) {
+        strokePicker.addEventListener('input', (e) => {
+          strokeColor = e.target.value;
+          updateSelectedObjectStyle();
+          applyToolSettings();
+        });
+      }
+
+      addSafeListener('fill-type-select', 'change', (e) => {
+        fillType = e.target.value;
+        updateSelectedObjectStyle();
+      });
+
+      const widthSlider = document.getElementById('stroke-width-slider');
+      const widthVal = document.getElementById('stroke-width-val');
+      if (widthSlider) {
+        widthSlider.addEventListener('input', (e) => {
+          strokeWidth = e.target.value;
+          if (widthVal) widthVal.textContent = strokeWidth;
+          updateSelectedObjectStyle();
+          applyToolSettings();
+        });
+      }
+
+      const opacitySlider = document.getElementById('opacity-slider');
+      const opacityVal = document.getElementById('opacity-val');
+      if (opacitySlider) {
+        opacitySlider.addEventListener('input', (e) => {
+          opacity = parseFloat(e.target.value);
+          if (opacityVal) opacityVal.textContent = `${Math.round(opacity * 100)}%`;
+          updateSelectedObjectStyle();
+          applyToolSettings();
+        });
+      }
+
+      function updateSelectedObjectStyle() {
+        if (!fabricCanvas) return;
+        const activeObj = fabricCanvas.getActiveObject();
+        if (!activeObj) return;
+
+        if (activeObj.type === 'i-text' || activeObj.type === 'text') {
+          activeObj.set({
+            fill: hexToRgba(strokeColor, 1),
+            fontSize: Math.max(12, parseInt(strokeWidth)),
+          });
+        } else if (activeObj.type === 'rect') {
+          if (activeObj.fill !== '#000000' || activeObj.opacity !== 1) {
+            activeObj.set({
+              stroke: hexToRgba(strokeColor, 1),
+              fill: getShapeFillColor(),
+              strokeWidth: Math.max(1, Math.round(strokeWidth / 6)),
+            });
+          }
+        } else if (activeObj.type === 'circle' || activeObj.type === 'ellipse') {
+          activeObj.set({
+            stroke: hexToRgba(strokeColor, 1),
+            fill: getShapeFillColor(),
+            strokeWidth: Math.max(1, Math.round(strokeWidth / 6)),
+          });
+        }
+        fabricCanvas.renderAll();
+        saveHistory();
+      }
+
+      addSafeListener('btn-duplicate', 'click', duplicateSelectedObject);
+
+      const deleteSelected = () => {
+        if (!fabricCanvas) return;
+        const activeObjs = fabricCanvas.getActiveObjects();
+        if (activeObjs.length > 0) {
+          activeObjs.forEach(obj => fabricCanvas.remove(obj));
+          fabricCanvas.discardActiveObject();
+          fabricCanvas.renderAll();
+          saveHistory();
+          updateSelectionButtonsState();
+        }
+      };
+      addSafeListener('btn-delete-selected', 'click', deleteSelected);
+
+      addSafeListener('btn-clear-page', 'click', () => {
+        if (!fabricCanvas || fabricCanvas.getObjects().length === 0) return;
+        fabricCanvas.clear();
+        saveHistory();
+        showToast('ล้างการวาดทั้งหมดในหน้านี้แล้ว');
+      });
+
+      addSafeListener('btn-undo', 'click', undo);
+      addSafeListener('btn-redo', 'click', redo);
+
+      // คีย์ลัด
+      window.addEventListener('keydown', (e) => {
+        const activeObj = fabricCanvas ? fabricCanvas.getActiveObject() : null;
+        if (activeObj && activeObj.isEditing) return;
+
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          if (activeObj) deleteSelected();
+        } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+          duplicateSelectedObject();
+          e.preventDefault();
+        } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+          if (e.shiftKey) redo();
+          else undo();
+          e.preventDefault();
+        } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+          redo();
+          e.preventDefault();
+        }
+      });
+
+      // สร้างตัวอย่างทดสอบทันที
+      generateSamplePdf();
+    });
+  </script>
+</body>
+</html>
