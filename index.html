@@ -999,117 +999,94 @@
 
       showLoading(true, "กำลังรวมเส้นวาดและประมวลผลไฟล์ PDF...");
       try {
+        // เคลียร์กรอบ Selection เพื่อไม่ให้ติดกรอบฟ้าไปในไฟล์พิมพ์
+        if (fabricCanvas) {
+          fabricCanvas.discardActiveObject();
+          fabricCanvas.renderAll();
+        }
         saveCurrentPageAnnotations();
 
         renderedPageImages = [];
         const pageRenderData = [];
-        const scaleFactor = 2.0; // เรนเดอร์ความละเอียดสูง 2x สำหรับความคมชัดสูงสุด
 
-        // ขั้นตอนที่ 1: เรนเดอร์หน้า PDF เดิมพร้อมเส้นวาด ไฮไลต์ ถมดำ และตัวอักษรของทุกหน้า
+        // วนลูปประมวลผลทุกหน้าโดยใช้ currentScale ตรงกัน 100% กับหน้าจอที่ผู้ใช้เห็น
         for (let i = 1; i <= totalPages; i++) {
           const originalPage = await pdfDoc.getPage(i);
-          const vp = originalPage.getViewport({ scale: scaleFactor });
           const baseVp = originalPage.getViewport({ scale: 1.0 });
+          const vp = originalPage.getViewport({ scale: currentScale });
 
           const mergedCanvas = document.createElement('canvas');
           mergedCanvas.width = vp.width;
           mergedCanvas.height = vp.height;
           const mergedCtx = mergedCanvas.getContext('2d');
 
-          // วาดหน้า PDF ต้นฉบับ
-          await originalPage.render({
-            canvasContext: mergedCtx,
-            viewport: vp
-          }).promise;
+          if (i === currentPageNum) {
+            // หน้าปัจจุบันที่กำลังแก้ไขอยู่: ดึงพิกเซลตรงจากหน้าจอ 1:1 (ไม่มีการเลื่อนหลุดแม้แต่พิกเซลเดียว)
+            const pdfCanvas = document.getElementById('pdf-render-canvas');
+            mergedCtx.drawImage(pdfCanvas, 0, 0);
+            mergedCtx.drawImage(fabricCanvas.lowerCanvasEl, 0, 0);
+          } else {
+            // หน้าอื่นๆ: เรนเดอร์ด้วยสเกล currentScale เดียวกันเป๊ะ
+            await originalPage.render({
+              canvasContext: mergedCtx,
+              viewport: vp
+            }).promise;
 
-          // วาด Annotation (ไฮไลต์, ถมดำ, ข้อความ, รูปทรง) ซิงก์สเกล 2x เป๊ะ
-          const pageData = pageAnnotations[i];
-          let annotPngUrl = null;
-          if (pageData && pageData.objects && pageData.objects.length > 0) {
-            const tempCanvasEl = document.createElement('canvas');
-            tempCanvasEl.width = vp.width;
-            tempCanvasEl.height = vp.height;
-            const tempFabric = new fabric.StaticCanvas(tempCanvasEl, {
-              width: vp.width,
-              height: vp.height
-            });
-
-            const savedData = JSON.parse(JSON.stringify(pageData));
-            if (savedData.viewportTransform) delete savedData.viewportTransform;
-
-            await new Promise((resolve) => {
-              tempFabric.loadFromJSON(savedData, () => {
-                tempFabric.setDimensions({ width: vp.width, height: vp.height });
-                tempFabric.setZoom(scaleFactor);
-                tempFabric.renderAll();
-                resolve();
+            const pageData = pageAnnotations[i];
+            if (pageData && pageData.objects && pageData.objects.length > 0) {
+              const tempCanvasEl = document.createElement('canvas');
+              tempCanvasEl.width = vp.width;
+              tempCanvasEl.height = vp.height;
+              const tempFabric = new fabric.StaticCanvas(tempCanvasEl, {
+                width: vp.width,
+                height: vp.height
               });
-            });
 
-            mergedCtx.drawImage(tempCanvasEl, 0, 0);
-            annotPngUrl = tempFabric.toDataURL({ format: 'png', multiplier: 1 });
-            tempFabric.dispose();
+              const savedData = JSON.parse(JSON.stringify(pageData));
+              if (savedData.viewportTransform) delete savedData.viewportTransform;
+
+              await new Promise((resolve) => {
+                tempFabric.loadFromJSON(savedData, () => {
+                  tempFabric.setDimensions({ width: vp.width, height: vp.height });
+                  tempFabric.setZoom(currentScale);
+                  tempFabric.renderAll();
+                  resolve();
+                });
+              });
+
+              mergedCtx.drawImage(tempCanvasEl, 0, 0);
+              tempFabric.dispose();
+            }
           }
 
-          const mergedJpegUrl = mergedCanvas.toDataURL('image/jpeg', 0.95);
+          const mergedJpegUrl = mergedCanvas.toDataURL('image/jpeg', 0.98);
           renderedPageImages.push(mergedJpegUrl);
 
           pageRenderData.push({
             pageIndex: i,
             width: baseVp.width,
             height: baseVp.height,
-            annotPngUrl: annotPngUrl,
             mergedJpegUrl: mergedJpegUrl
           });
         }
 
         let modifiedBytes = null;
-        let savedSuccessfully = false;
+        const { PDFDocument } = PDFLib;
+        const freshPdfDoc = await PDFDocument.create();
 
-        // ขั้นตอนที่ 2: ทดลองบันทึกแบบฝังทับเดิมพร้อม ignoreEncryption: true
-        try {
-          const { PDFDocument } = PDFLib;
-          const finalPdfDoc = await PDFDocument.load(originalPdfBytes, { ignoreEncryption: true });
-          const pages = finalPdfDoc.getPages();
-
-          for (let i = 0; i < pages.length; i++) {
-            const data = pageRenderData[i];
-            if (data.annotPngUrl) {
-              const pngImage = await finalPdfDoc.embedPng(data.annotPngUrl);
-              pages[i].drawImage(pngImage, {
-                x: 0,
-                y: 0,
-                width: data.width,
-                height: data.height,
-              });
-            }
-          }
-
-          modifiedBytes = await finalPdfDoc.save();
-          savedSuccessfully = true;
-        } catch (vectorErr) {
-          console.warn("ไม่สามารถบันทึกทับไฟล์เดิมได้เนื่องจากติดการเข้ารหัส/ระบบป้องกัน:", vectorErr);
+        for (let i = 0; i < pageRenderData.length; i++) {
+          const data = pageRenderData[i];
+          const newPage = freshPdfDoc.addPage([data.width, data.height]);
+          const embeddedJpg = await freshPdfDoc.embedJpg(data.mergedJpegUrl);
+          newPage.drawImage(embeddedJpg, {
+            x: 0,
+            y: 0,
+            width: data.width,
+            height: data.height,
+          });
         }
 
-        // หากไฟล์ติด Encryption หรือมีสิทธิ์ห้ามเซฟทับ ให้ใช้ระบบสร้าง PDF ใหม่ (Bypass Lock 100%)
-        if (!savedSuccessfully) {
-          const { PDFDocument } = PDFLib;
-          const freshPdfDoc = await PDFDocument.create();
-
-          for (let i = 0; i < pageRenderData.length; i++) {
-            const data = pageRenderData[i];
-            const newPage = freshPdfDoc.addPage([data.width, data.height]);
-            const embeddedJpg = await freshPdfDoc.embedJpg(data.mergedJpegUrl);
-            newPage.drawImage(embeddedJpg, {
-              x: 0,
-              y: 0,
-              width: data.width,
-              height: data.height,
-            });
-          }
-
-          modifiedBytes = await freshPdfDoc.save();
-        }
+        modifiedBytes = await freshPdfDoc.save();
 
         if (currentExportedUrl) URL.revokeObjectURL(currentExportedUrl);
 
