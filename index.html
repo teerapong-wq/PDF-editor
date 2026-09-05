@@ -4,13 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PDF Editor & Redaction Tool</title>
-  <!-- Tailwind CSS สำหรับจัดแต่งหน้าจอ -->
+  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- PDF.js สำหรับอ่านและเรนเดอร์เอกสาร PDF -->
+  <!-- PDF.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <!-- PDF-Lib สำหรับประมวลผลและส่งออกไฟล์ PDF -->
+  <!-- PDF-Lib -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-  <!-- Lucide Icons สำหรับไอคอนปุ่ม -->
+  <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
   <style>
     /* ซ่อน scrollbar เกินจำเป็น */
@@ -28,6 +28,19 @@
       background-color: #ffffff;
       margin: auto;
     }
+    /* กล่องสำหรับพิมพ์ข้อความแบบสดๆ บนหน้ากระดาษ */
+    .inline-text-editor {
+      position: absolute;
+      background: transparent;
+      border: 1px dashed #6366f1;
+      outline: none;
+      color: #000000;
+      font-family: sans-serif;
+      padding: 2px 4px;
+      z-index: 50;
+      white-space: nowrap;
+      min-width: 60px;
+    }
   </style>
 </head>
 <body class="bg-slate-950 text-slate-100 flex flex-col h-screen overflow-hidden select-none font-sans">
@@ -39,8 +52,8 @@
         <i data-lucide="file-edit" class="w-5 h-5"></i>
       </div>
       <div>
-        <h1 class="font-bold text-sm md:text-base leading-tight text-white">PDF Editor</h1>
-        <p class="text-[11px] text-slate-400 hidden sm:block">ถมดำทึบ • ไฮไลต์ตรง • พิมพ์ข้อความ</p>
+        <h1 class="font-bold text-sm md:text-base leading-tight text-white">PDF Editor Pro</h1>
+        <p class="text-[11px] text-slate-400 hidden sm:block">ถมดำทึบ • ไฮไลต์ตรง • พิมพ์ข้อความอิสระ</p>
       </div>
     </div>
 
@@ -86,13 +99,19 @@
   <!-- แถบเครื่องมือ (Toolbar) -->
   <nav class="bg-slate-900/95 border-b border-slate-800 px-3 md:px-5 py-2 flex flex-wrap items-center justify-between gap-2 z-10 text-xs">
     <div class="flex items-center space-x-1 bg-slate-950/70 p-1 rounded-xl border border-slate-800">
+      <!-- ปุ่มเลือก/ย้าย -->
+      <button id="tool-select" class="tool-btn text-slate-300 hover:text-white px-2.5 py-1.5 rounded-lg flex items-center space-x-1.5 transition">
+        <i data-lucide="mouse-pointer" class="w-4 h-4"></i>
+        <span>เลือก/ย้าย</span>
+      </button>
+
       <!-- ปุ่มถมดำทึบ 100% -->
       <button id="tool-blackout" class="tool-btn bg-indigo-600 text-white font-bold px-3 py-1.5 rounded-lg flex items-center space-x-1.5 transition">
         <i data-lucide="shield-alert" class="w-4 h-4 text-rose-300"></i>
         <span>ถมดำทึบ 100%</span>
       </button>
 
-      <!-- ปุ่มไฮไลต์สี่เหลี่ยม -->
+      <!-- ปุ่มไฮไลต์สี่เหลี่ยมตรง -->
       <button id="tool-highlighter" class="tool-btn text-amber-300 hover:text-white px-2.5 py-1.5 rounded-lg flex items-center space-x-1.5 transition">
         <i data-lucide="highlighter" class="w-4 h-4"></i>
         <span>ไฮไลต์</span>
@@ -111,28 +130,56 @@
       </button>
     </div>
 
-    <!-- ส่วนเลือกสีและขนาด -->
+    <!-- ส่วนเลือกสีและขนาดตัวอักษร/เส้น -->
     <div class="flex items-center space-x-3 bg-slate-950/70 p-1 rounded-xl border border-slate-800">
-      <!-- สีไฮไลต์/กรอบ -->
+      <!-- สีตัวอักษร/ไฮไลต์/กรอบ -->
       <div class="flex items-center space-x-1.5 px-1">
         <span class="text-slate-400">สี:</span>
-        <input type="color" id="shape-color-picker" value="#facc15" class="w-6 h-6 rounded border border-slate-700 bg-transparent cursor-pointer" />
+        <input type="color" id="shape-color-picker" value="#000000" class="w-6 h-6 rounded border border-slate-700 bg-transparent cursor-pointer" title="เปลี่ยนสี" />
       </div>
 
       <div class="h-4 w-px bg-slate-800"></div>
 
-      <!-- ข้อความที่พิมพ์ -->
-      <div class="flex items-center space-x-1">
-        <span class="text-slate-400">คำที่พิมพ์:</span>
-        <input type="text" id="custom-text-input" value="CONFIDENTIAL" class="bg-slate-800 border border-slate-700 rounded px-2 py-0.5 text-xs text-white w-28 focus:outline-none focus:border-indigo-500" />
+      <!-- ขนาดตัวอักษร -->
+      <div class="flex items-center space-x-1.5">
+        <span class="text-slate-400">ขนาด:</span>
+        <select id="text-size-select" class="bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-xs text-white focus:outline-none focus:border-indigo-500">
+          <option value="12">12px</option>
+          <option value="14">14px</option>
+          <option value="16" selected>16px</option>
+          <option value="18">18px</option>
+          <option value="20">20px</option>
+          <option value="24">24px</option>
+          <option value="32">32px</option>
+        </select>
       </div>
+
+      <div class="h-4 w-px bg-slate-800"></div>
+
+      <!-- สไตล์กล่องข้อความ -->
+      <label class="flex items-center space-x-1 cursor-pointer" title="มีแถบพื้นหลังสีดำหลังตัวหนังสือ">
+        <input type="checkbox" id="text-bg-checkbox" class="accent-indigo-500 rounded" checked />
+        <span class="text-slate-400">พื้นหลังทึบ</span>
+      </label>
+
+      <div class="h-4 w-px bg-slate-800"></div>
+
+      <!-- คัดลอก / ลบที่เลือก -->
+      <button id="btn-duplicate" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-lg flex items-center space-x-1 transition disabled:opacity-30" disabled title="คัดลอกวัตถุที่เลือก">
+        <i data-lucide="copy" class="w-3.5 h-3.5 text-sky-400"></i>
+        <span>คัดลอก</span>
+      </button>
+
+      <button id="btn-delete" class="bg-rose-950/40 hover:bg-rose-900 border border-rose-800/40 text-rose-300 px-2.5 py-1 rounded-lg flex items-center space-x-1 transition disabled:opacity-30" disabled title="ลบวัตถุที่เลือก">
+        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+        <span>ลบ</span>
+      </button>
 
       <div class="h-4 w-px bg-slate-800"></div>
 
       <!-- ล้างหน้านี้ -->
-      <button id="btn-clear" class="bg-rose-950/50 hover:bg-rose-900 border border-rose-800/60 text-rose-300 px-2.5 py-1 rounded-lg flex items-center space-x-1 transition">
+      <button id="btn-clear" class="bg-rose-950/20 hover:bg-rose-900/60 text-rose-400 px-2 py-1 rounded-lg flex items-center space-x-1 transition" title="ล้างทุกอย่างในหน้านี้">
         <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
-        <span>ล้างหน้านี้</span>
       </button>
     </div>
   </nav>
@@ -144,6 +191,8 @@
       <canvas id="pdf-canvas" class="absolute top-0 left-0 block z-0"></canvas>
       <!-- 2. ชั้นบน: วาดรอยถมดำ ไฮไลต์ และตัวหนังสือทับลงไป -->
       <canvas id="draw-canvas" class="relative block z-10 cursor-crosshair"></canvas>
+      <!-- กล่องพิมพ์ข้อความสดบนหน้าจอ -->
+      <input type="text" id="inline-input" class="inline-text-editor hidden" placeholder="พิมพ์ข้อความที่นี่..." />
     </div>
 
     <!-- กล่องแจ้งเตือน (Toast Notification) -->
@@ -159,26 +208,32 @@
 
     // ตัวแปรสถานะ
     let pdfDoc = null;
-    let originalPdfBytes = null;
     let fileName = "document.pdf";
     let currentPageNum = 1;
     let totalPages = 1;
     let currentScale = 1.25;
-    let currentTool = 'blackout'; // 'blackout', 'highlighter', 'text', 'rect'
-    let currentColor = '#facc15';
+    let currentTool = 'blackout'; // 'select', 'blackout', 'highlighter', 'text', 'rect'
+    let currentColor = '#000000';
+    let currentFontSize = 16;
+    let currentHasBg = true;
 
-    // เก็บรายการรูปทรงที่วาดในแต่ละหน้า: { pageNum: [shapes] }
+    // เก็บรายการรูปทรงในหน่วย Base Scale (1.0) เพื่อให้ซูมเข้าออกแล้วพิกัดไม่เพี้ยน: { pageNum: [shapes] }
     const pageShapes = {};
+    let selectedShapeIndex = -1;
 
     const pdfCanvas = document.getElementById('pdf-canvas');
     const drawCanvas = document.getElementById('draw-canvas');
+    const inlineInput = document.getElementById('inline-input');
     const pdfCtx = pdfCanvas.getContext('2d');
     const drawCtx = drawCanvas.getContext('2d');
     const canvasWrapper = document.getElementById('canvas-wrapper');
 
     let isDrawing = false;
+    let isDragging = false;
     let startX = 0;
     let startY = 0;
+    let dragOffsetX = 0;
+    let dragOffsetY = 0;
     let previewShape = null;
 
     // แสดงแจ้งเตือน Toast
@@ -205,49 +260,93 @@
       setTimeout(() => toast.classList.add('hidden'), 3000);
     }
 
-    // ฟังก์ชันวาดรูปทรงลงใน Draw Canvas
+    function updateActionButtons() {
+      const hasSelection = (selectedShapeIndex >= 0);
+      document.getElementById('btn-duplicate').disabled = !hasSelection;
+      document.getElementById('btn-delete').disabled = !hasSelection;
+    }
+
+    // แปลงพิกัดจากหน้าจอ (Current Scale) เป็นพิกัดจริงของหน้า PDF (Base Scale 1.0)
+    function toBaseCoords(val) {
+      return val / currentScale;
+    }
+
+    // แปลงพิกัดจริงของหน้า PDF เป็นพิกัดแสดงผลบนหน้าจอ
+    function toScreenCoords(val) {
+      return val * currentScale;
+    }
+
+    // ฟังก์ชันวาดรูปทรงลงใน Canvas
     function redrawShapes() {
       drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
       const shapes = pageShapes[currentPageNum] || [];
 
-      shapes.forEach(shape => drawSingleShape(drawCtx, shape));
+      shapes.forEach((shape, index) => {
+        const isSelected = (index === selectedShapeIndex);
+        drawSingleShape(drawCtx, shape, currentScale, isSelected);
+      });
+
       if (previewShape) {
-        drawSingleShape(drawCtx, previewShape);
+        drawSingleShape(drawCtx, previewShape, currentScale, false);
       }
+      updateActionButtons();
     }
 
-    function drawSingleShape(ctx, shape) {
+    function drawSingleShape(ctx, shape, scale, isSelected) {
       ctx.save();
+      const x = toScreenCoords(shape.x);
+      const y = toScreenCoords(shape.y);
+      const w = toScreenCoords(shape.w || 0);
+      const h = toScreenCoords(shape.h || 0);
+
       if (shape.type === 'blackout') {
-        // ถมดำทึบสนิท 100%
+        // ถมดำทึบ 100%
         ctx.fillStyle = '#000000';
-        ctx.fillRect(shape.x, shape.y, shape.w, shape.h);
+        ctx.fillRect(x, y, w, h);
       } else if (shape.type === 'highlighter') {
         // ไฮไลต์ตรงโปร่งแสง
         ctx.fillStyle = shape.color || 'rgba(250, 204, 21, 0.4)';
-        ctx.fillRect(shape.x, shape.y, shape.w, shape.h);
+        ctx.fillRect(x, y, w, h);
       } else if (shape.type === 'rect') {
         // กรอบสี่เหลี่ยม
         ctx.strokeStyle = shape.color || '#f43f5e';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(shape.x, shape.y, shape.w, shape.h);
+        ctx.lineWidth = Math.max(1, 2.5 * scale);
+        ctx.strokeRect(x, y, w, h);
       } else if (shape.type === 'text') {
-        // กล่องข้อความสีดำ ตัวหนังสือสีขาว
-        ctx.font = 'bold 16px sans-serif';
-        const textWidth = ctx.measureText(shape.text).width;
-        const boxHeight = 26;
-        const boxWidth = textWidth + 16;
-        
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(shape.x, shape.y - 20, boxWidth, boxHeight);
-        
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(shape.text, shape.x + 8, shape.y - 2);
+        // ข้อความอิสระ
+        const fontSize = (shape.fontSize || 16) * scale;
+        ctx.font = `bold ${fontSize}px sans-serif`;
+        const metrics = ctx.measureText(shape.text);
+        const textWidth = metrics.width;
+        const textHeight = fontSize * 1.25;
+
+        // บันทึกขนาดที่คำนวณได้กลับเข้าวัตถุเพื่อใช้ในการคลิกเลือก (Hit Testing)
+        shape.w = toBaseCoords(textWidth + 8);
+        shape.h = toBaseCoords(textHeight);
+
+        if (shape.hasBg) {
+          ctx.fillStyle = '#000000';
+          ctx.fillRect(x, y - fontSize * 0.95, textWidth + 8, textHeight);
+          ctx.fillStyle = '#ffffff';
+        } else {
+          ctx.fillStyle = shape.color || '#000000';
+        }
+
+        ctx.fillText(shape.text, x + 4, y);
       }
+
+      // เส้นประแสดงสถานะถูกเลือก (Selected Highlight)
+      if (isSelected) {
+        ctx.strokeStyle = '#6366f1';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.strokeRect(x - 2, y - (shape.type === 'text' ? (shape.fontSize || 16) * scale * 0.95 : 2), (shape.w ? toScreenCoords(shape.w) : w) + 4, (shape.h ? toScreenCoords(shape.h) : h) + 4);
+      }
+
       ctx.restore();
     }
 
-    // จัดการเหตุการณ์การวาด (Mouse & Touch)
+    // จัดการเหตุการณ์เมาส์/สัมผัส
     function getPointerPos(e) {
       const rect = drawCanvas.getBoundingClientRect();
       const clientX = e.touches ? e.touches[0].clientX : e.clientX;
@@ -258,65 +357,158 @@
       };
     }
 
+    // ตรวจสอบว่าคลิกโดนวัตถุชิ้นไหน (Hit Test)
+    function findShapeAt(x, y) {
+      const shapes = pageShapes[currentPageNum] || [];
+      const baseX = toBaseCoords(x);
+      const baseY = toBaseCoords(y);
+
+      for (let i = shapes.length - 1; i >= 0; i--) {
+        const s = shapes[i];
+        if (s.type === 'text') {
+          const textHeight = s.h || (s.fontSize || 16) * 1.25;
+          if (baseX >= s.x && baseX <= s.x + (s.w || 50) && baseY >= s.y - textHeight && baseY <= s.y + 4) {
+            return i;
+          }
+        } else {
+          if (baseX >= s.x && baseX <= s.x + s.w && baseY >= s.y && baseY <= s.y + s.h) {
+            return i;
+          }
+        }
+      }
+      return -1;
+    }
+
     function handleStart(e) {
+      // ซ่อนกล่องพิมพ์ข้อความเดิมถ้ากดพื้นที่อื่น
+      if (!inlineInput.classList.contains('hidden') && e.target !== inlineInput) {
+        commitInlineText();
+      }
+
       const pos = getPointerPos(e);
       startX = pos.x;
       startY = pos.y;
-      isDrawing = true;
+
+      if (currentTool === 'select') {
+        selectedShapeIndex = findShapeAt(startX, startY);
+        if (selectedShapeIndex >= 0) {
+          isDragging = true;
+          const shape = pageShapes[currentPageNum][selectedShapeIndex];
+          dragOffsetX = toBaseCoords(startX) - shape.x;
+          dragOffsetY = toBaseCoords(startY) - shape.y;
+        }
+        redrawShapes();
+        return;
+      }
+
+      selectedShapeIndex = -1;
 
       if (currentTool === 'text') {
-        const textVal = document.getElementById('custom-text-input').value || 'CONFIDENTIAL';
-        if (!pageShapes[currentPageNum]) pageShapes[currentPageNum] = [];
-        pageShapes[currentPageNum].push({
-          type: 'text',
-          x: startX,
-          y: startY,
-          text: textVal
-        });
-        redrawShapes();
-        isDrawing = false;
+        // เปิดกล่องสำหรับพิมพ์ข้อความทันทีตรงจุดที่คลิก
+        showInlineTextInput(startX, startY);
+        return;
       }
+
+      isDrawing = true;
     }
 
     function handleMove(e) {
+      const pos = getPointerPos(e);
+
+      if (isDragging && selectedShapeIndex >= 0) {
+        e.preventDefault();
+        const shape = pageShapes[currentPageNum][selectedShapeIndex];
+        shape.x = toBaseCoords(pos.x) - dragOffsetX;
+        shape.y = toBaseCoords(pos.y) - dragOffsetY;
+        redrawShapes();
+        return;
+      }
+
       if (!isDrawing) return;
       e.preventDefault();
-      const pos = getPointerPos(e);
 
       const w = pos.x - startX;
       const h = pos.y - startY;
 
-      let hexColor = currentColor;
-      let alphaColor = currentColor;
-      // แปลงสีเป็นโปร่งแสงถ้าเป็นไฮไลต์
+      let colorVal = currentColor;
       if (currentTool === 'highlighter') {
-        const r = parseInt(hexColor.slice(1, 3), 16) || 250;
-        const g = parseInt(hexColor.slice(3, 5), 16) || 204;
-        const b = parseInt(hexColor.slice(5, 7), 16) || 21;
-        alphaColor = `rgba(${r}, ${g}, ${b}, 0.4)`;
+        // ไฮไลต์ให้โปร่งแสงเสมอ
+        colorVal = 'rgba(250, 204, 21, 0.4)';
       }
 
       previewShape = {
         type: currentTool,
-        x: w < 0 ? pos.x : startX,
-        y: h < 0 ? pos.y : startY,
-        w: Math.abs(w),
-        h: Math.abs(h),
-        color: currentTool === 'highlighter' ? alphaColor : hexColor
+        x: toBaseCoords(w < 0 ? pos.x : startX),
+        y: toBaseCoords(h < 0 ? pos.y : startY),
+        w: toBaseCoords(Math.abs(w)),
+        h: toBaseCoords(Math.abs(h)),
+        color: colorVal
       };
       redrawShapes();
     }
 
     function handleEnd() {
+      if (isDragging) {
+        isDragging = false;
+        return;
+      }
+
       if (!isDrawing) return;
       isDrawing = false;
-      if (previewShape && previewShape.w > 3 && previewShape.h > 3) {
+
+      if (previewShape && previewShape.w > toBaseCoords(3) && previewShape.h > toBaseCoords(3)) {
         if (!pageShapes[currentPageNum]) pageShapes[currentPageNum] = [];
         pageShapes[currentPageNum].push(previewShape);
+        selectedShapeIndex = pageShapes[currentPageNum].length - 1;
       }
       previewShape = null;
       redrawShapes();
     }
+
+    // การเปิดกล่องพิมพ์ข้อความตรงตำแหน่งที่คลิก
+    function showInlineTextInput(screenX, screenY) {
+      inlineInput.style.left = `${screenX}px`;
+      inlineInput.style.top = `${screenY - currentFontSize * currentScale}px`;
+      inlineInput.style.fontSize = `${currentFontSize * currentScale}px`;
+      inlineInput.style.color = currentHasBg ? '#ffffff' : currentColor;
+      inlineInput.style.backgroundColor = currentHasBg ? '#000000' : 'transparent';
+      inlineInput.value = '';
+      inlineInput.classList.remove('hidden');
+      inlineInput.focus();
+
+      // บันทึกพิกัดตำแหน่งเริ่มต้น
+      inlineInput.dataset.baseX = toBaseCoords(screenX);
+      inlineInput.dataset.baseY = toBaseCoords(screenY);
+    }
+
+    function commitInlineText() {
+      const text = inlineInput.value.trim();
+      if (text) {
+        if (!pageShapes[currentPageNum]) pageShapes[currentPageNum] = [];
+        pageShapes[currentPageNum].push({
+          type: 'text',
+          x: parseFloat(inlineInput.dataset.baseX),
+          y: parseFloat(inlineInput.dataset.baseY),
+          text: text,
+          fontSize: currentFontSize,
+          color: currentColor,
+          hasBg: currentHasBg
+        });
+        selectedShapeIndex = pageShapes[currentPageNum].length - 1;
+        redrawShapes();
+      }
+      inlineInput.classList.add('hidden');
+      inlineInput.value = '';
+    }
+
+    inlineInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        commitInlineText();
+      } else if (e.key === 'Escape') {
+        inlineInput.classList.add('hidden');
+        inlineInput.value = '';
+      }
+    });
 
     drawCanvas.addEventListener('mousedown', handleStart);
     drawCanvas.addEventListener('mousemove', handleMove);
@@ -325,6 +517,32 @@
     drawCanvas.addEventListener('touchstart', handleStart, { passive: false });
     drawCanvas.addEventListener('touchmove', handleMove, { passive: false });
     drawCanvas.addEventListener('touchend', handleEnd);
+
+    // ดับเบิลคลิกเพื่อแก้ไขข้อความเดิม
+    drawCanvas.addEventListener('dblclick', (e) => {
+      const pos = getPointerPos(e);
+      const hit = findShapeAt(pos.x, pos.y);
+      if (hit >= 0) {
+        const shape = pageShapes[currentPageNum][hit];
+        if (shape.type === 'text') {
+          inlineInput.style.left = `${toScreenCoords(shape.x)}px`;
+          inlineInput.style.top = `${toScreenCoords(shape.y) - (shape.fontSize || 16) * currentScale}px`;
+          inlineInput.style.fontSize = `${(shape.fontSize || 16) * currentScale}px`;
+          inlineInput.style.color = shape.hasBg ? '#ffffff' : shape.color;
+          inlineInput.style.backgroundColor = shape.hasBg ? '#000000' : 'transparent';
+          inlineInput.value = shape.text;
+          inlineInput.dataset.baseX = shape.x;
+          inlineInput.dataset.baseY = shape.y;
+          inlineInput.classList.remove('hidden');
+          inlineInput.focus();
+
+          // ลบตัวเดิมออกเพื่อให้พิมพ์แทนที่
+          pageShapes[currentPageNum].splice(hit, 1);
+          selectedShapeIndex = -1;
+          redrawShapes();
+        }
+      }
+    });
 
     // ฟังก์ชันเรนเดอร์หน้า PDF
     async function renderPage(num) {
@@ -349,14 +567,13 @@
       // 1. เรนเดอร์เนื้อหาหน้า PDF ลงแผ่นล่าง
       await page.render({ canvasContext: pdfCtx, viewport }).promise;
 
-      // 2. เรนเดอร์การถมดำ/ไฮไลต์ลงแผ่นบน
+      // 2. เรนเดอร์การถมดำ ไฮไลต์ ตัวหนังสือลงแผ่นบน
       redrawShapes();
     }
 
     // โหลดเอกสาร PDF เข้าสู่ระบบ
     async function loadPDF(arrayBuffer, name) {
       try {
-        originalPdfBytes = arrayBuffer.slice(0);
         fileName = name || "document.pdf";
 
         // ปลดล็อก Encryption อัตโนมัติ ป้องกัน Error บนไฟล์ทางการ
@@ -370,6 +587,7 @@
         
         // ล้างข้อมูลหน้าเดิม
         for (let k in pageShapes) delete pageShapes[k];
+        selectedShapeIndex = -1;
 
         await renderPage(1);
         showToast(`เปิดเอกสารสำเร็จ (${totalPages} หน้า)`, 'success');
@@ -379,29 +597,28 @@
       }
     }
 
-    // สร้างตัวอย่างทดสอบทันทีเมื่อเปิดเว็บ
+    // ตัวอย่างทดสอบทันทีเมื่อเปิดเว็บ
     async function generateSamplePdf() {
       try {
         const { PDFDocument, rgb } = PDFLib;
         const doc = await PDFDocument.create();
         const page = doc.addPage([595, 842]); // ขนาด A4
         
-        // วาดเนื้อหาตัวอย่าง
-        page.drawText("PDF Highlighting & Blackout Test Document", {
+        page.drawText("PDF Editor Test Document", {
           x: 50,
           y: 780,
           size: 18,
           color: rgb(0.1, 0.1, 0.3)
         });
 
-        page.drawText("Test Line 1: Confidential Data (Try blacking out this line)", {
+        page.drawText("Try blacking out this confidential text block.", {
           x: 50,
           y: 730,
           size: 13,
           color: rgb(0.2, 0.2, 0.2)
         });
 
-        page.drawText("Test Line 2: Important notes for review (Try highlighting this line)", {
+        page.drawText("Try clicking Text Tool to type custom annotations anywhere.", {
           x: 50,
           y: 690,
           size: 13,
@@ -417,7 +634,7 @@
           borderWidth: 1
         });
 
-        page.drawText("Secret Code: 8941-4921-9921-0012", {
+        page.drawText("ID: 8941-4921-9921-0012", {
           x: 70,
           y: 620,
           size: 14,
@@ -444,10 +661,12 @@
         const { PDFDocument } = PDFLib;
         const newDoc = await PDFDocument.create();
 
+        // เรนเดอร์และรวมภาพด้วย Base Scale สม่ำเสมอเพื่อความแม่นยำ 100%
+        const exportScale = 2.0; // ความคมชัดสูง 2x (300 DPI)
+
         for (let i = 1; i <= totalPages; i++) {
           const page = await pdfDoc.getPage(i);
-          // ใช้สเกลเดียวกับที่แสดงบนหน้าจอ พิกัดจะตรง 100% ไม่เลื่อน
-          const viewport = page.getViewport({ scale: currentScale });
+          const viewport = page.getViewport({ scale: exportScale });
 
           const exportCanvas = document.createElement('canvas');
           exportCanvas.width = viewport.width;
@@ -457,19 +676,21 @@
           // 1. วาดหน้า PDF เดิม
           await page.render({ canvasContext: eCtx, viewport }).promise;
 
-          // 2. วาดการถมดำและตัวหนังสือทับลงไปบนพิกเซลจริง
+          // 2. วาดการถมดำ ข้อความ และไฮไลต์ทับลงไปตามพิกัดเป๊ะๆ
           const shapes = pageShapes[i] || [];
-          shapes.forEach(shape => drawSingleShape(eCtx, shape));
+          shapes.forEach(shape => {
+            drawSingleShape(eCtx, shape, exportScale, false);
+          });
 
           // 3. แปลงเป็นภาพและฝังลงในเอกสาร PDF ใหม่
           const pagePng = exportCanvas.toDataURL('image/png');
           const embeddedImg = await newDoc.embedPng(pagePng);
-          const newPage = newDoc.addPage([viewport.width, viewport.height]);
+          const newPage = newDoc.addPage([viewport.width / exportScale, viewport.height / exportScale]);
           newPage.drawImage(embeddedImg, {
             x: 0,
             y: 0,
-            width: viewport.width,
-            height: viewport.height
+            width: viewport.width / exportScale,
+            height: viewport.height / exportScale
           });
         }
 
@@ -477,7 +698,6 @@
         const blob = new Blob([pdfBytes], { type: 'application/pdf' });
         const url = URL.createObjectURL(blob);
 
-        // คำสั่งดาวน์โหลดลงเครื่อง
         const a = document.createElement('a');
         a.href = url;
         const cleanName = fileName.replace(/\.pdf$/i, '');
@@ -520,7 +740,7 @@
         if (currentPageNum < totalPages) renderPage(currentPageNum + 1);
       };
 
-      // ปุ่มซูม
+      // ปุ่มซูม (ปรับสเกลโดยที่ตำแหน่งวัตถุยังล็อกตรงเป๊ะ)
       document.getElementById('btn-zoom-in').onclick = () => {
         if (currentScale < 2.5) {
           currentScale += 0.25;
@@ -539,6 +759,7 @@
 
       // สลับเครื่องมือ
       const toolMap = {
+        'tool-select': 'select',
         'tool-blackout': 'blackout',
         'tool-highlighter': 'highlighter',
         'tool-text': 'text',
@@ -552,22 +773,94 @@
             btn.classList.remove('bg-indigo-600', 'text-white');
           });
           document.getElementById(btnId).classList.add('bg-indigo-600', 'text-white');
+          
+          if (tool === 'select') {
+            drawCanvas.style.cursor = 'default';
+          } else if (tool === 'text') {
+            drawCanvas.style.cursor = 'text';
+          } else {
+            drawCanvas.style.cursor = 'crosshair';
+          }
         };
       });
 
-      // เลือกสี
+      // สี
       document.getElementById('shape-color-picker').oninput = (e) => {
         currentColor = e.target.value;
+        if (selectedShapeIndex >= 0) {
+          const s = pageShapes[currentPageNum][selectedShapeIndex];
+          s.color = currentColor;
+          redrawShapes();
+        }
+      };
+
+      // ขนาดตัวอักษร
+      document.getElementById('text-size-select').onchange = (e) => {
+        currentFontSize = parseInt(e.target.value);
+        if (selectedShapeIndex >= 0) {
+          const s = pageShapes[currentPageNum][selectedShapeIndex];
+          if (s.type === 'text') {
+            s.fontSize = currentFontSize;
+            redrawShapes();
+          }
+        }
+      };
+
+      // เช็คบ็อกซ์พื้นหลัง
+      document.getElementById('text-bg-checkbox').onchange = (e) => {
+        currentHasBg = e.target.checked;
+        if (selectedShapeIndex >= 0) {
+          const s = pageShapes[currentPageNum][selectedShapeIndex];
+          if (s.type === 'text') {
+            s.hasBg = currentHasBg;
+            redrawShapes();
+          }
+        }
+      };
+
+      // ปุ่มคัดลอก (Duplicate)
+      document.getElementById('btn-duplicate').onclick = () => {
+        if (selectedShapeIndex >= 0) {
+          const shape = pageShapes[currentPageNum][selectedShapeIndex];
+          const cloned = JSON.parse(JSON.stringify(shape));
+          cloned.x += toBaseCoords(15);
+          cloned.y += toBaseCoords(15);
+          pageShapes[currentPageNum].push(cloned);
+          selectedShapeIndex = pageShapes[currentPageNum].length - 1;
+          redrawShapes();
+          showToast('คัดลอกสำเร็จ');
+        }
+      };
+
+      // ปุ่มลบ (Delete)
+      document.getElementById('btn-delete').onclick = () => {
+        if (selectedShapeIndex >= 0) {
+          pageShapes[currentPageNum].splice(selectedShapeIndex, 1);
+          selectedShapeIndex = -1;
+          redrawShapes();
+          showToast('ลบสำเร็จ');
+        }
       };
 
       // ล้างหน้านี้
       document.getElementById('btn-clear').onclick = () => {
         pageShapes[currentPageNum] = [];
+        selectedShapeIndex = -1;
         redrawShapes();
         showToast('ล้างการแก้ไขในหน้านี้แล้ว');
       };
 
-      // โหลดตัวอย่างเริ่มต้นทันที
+      // คีย์ลัด (Delete / Backspace)
+      window.addEventListener('keydown', (e) => {
+        if ((e.key === 'Delete' || e.key === 'Backspace') && selectedShapeIndex >= 0 && inlineInput.classList.contains('hidden')) {
+          pageShapes[currentPageNum].splice(selectedShapeIndex, 1);
+          selectedShapeIndex = -1;
+          redrawShapes();
+          showToast('ลบสำเร็จ');
+        }
+      });
+
+      // โหลดตัวอย่างเริ่มต้น
       generateSamplePdf();
     });
   </script>
