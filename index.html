@@ -990,35 +990,34 @@
         return;
       }
 
-      showLoading(true, "กำลังรวมเส้นวาดและไฮไลต์ลงในเอกสาร PDF...");
+      showLoading(true, "กำลังรวมเส้นวาดและประมวลผลไฟล์ PDF...");
       try {
         saveCurrentPageAnnotations();
 
-        const { PDFDocument } = PDFLib;
-        const finalPdfDoc = await PDFDocument.load(originalPdfBytes);
-        const pages = finalPdfDoc.getPages();
-
         renderedPageImages = [];
+        const pageRenderData = [];
+        const scaleFactor = 2.0; // เรนเดอร์ความละเอียดสูง 2x สำหรับความคมชัดสูงสุด
 
-        for (let i = 0; i < pages.length; i++) {
-          const pageIndex = i + 1;
-          const pdfPage = pages[i];
-          const { width, height } = pdfPage.getSize();
-          const pageData = pageAnnotations[pageIndex];
-
-          const originalPage = await pdfDoc.getPage(pageIndex);
-          const vp = originalPage.getViewport({ scale: 2.0 });
+        // ขั้นตอนที่ 1: เรนเดอร์หน้า PDF เดิมพร้อมเส้นวาด ไฮไลต์ ถมดำ และตัวอักษรของทุกหน้า
+        for (let i = 1; i <= totalPages; i++) {
+          const originalPage = await pdfDoc.getPage(i);
+          const vp = originalPage.getViewport({ scale: scaleFactor });
+          const baseVp = originalPage.getViewport({ scale: 1.0 });
 
           const mergedCanvas = document.createElement('canvas');
           mergedCanvas.width = vp.width;
           mergedCanvas.height = vp.height;
           const mergedCtx = mergedCanvas.getContext('2d');
 
+          // วาดหน้า PDF ต้นฉบับ
           await originalPage.render({
             canvasContext: mergedCtx,
             viewport: vp
           }).promise;
 
+          // วาด Annotation (ไฮไลต์, ถมดำ, ข้อความ, รูปทรง)
+          const pageData = pageAnnotations[i];
+          let annotPngUrl = null;
           if (pageData && pageData.objects && pageData.objects.length > 0) {
             const tempCanvasEl = document.createElement('canvas');
             const tempFabric = new fabric.StaticCanvas(tempCanvasEl);
@@ -1032,23 +1031,70 @@
             });
 
             mergedCtx.drawImage(tempCanvasEl, 0, 0);
-
-            const annotPngUrl = tempFabric.toDataURL({ format: 'png', multiplier: 1 });
-            const pngImage = await finalPdfDoc.embedPng(annotPngUrl);
-            pdfPage.drawImage(pngImage, {
-              x: 0,
-              y: 0,
-              width: width,
-              height: height,
-            });
-
+            annotPngUrl = tempFabric.toDataURL({ format: 'png', multiplier: 1 });
             tempFabric.dispose();
           }
 
-          renderedPageImages.push(mergedCanvas.toDataURL('image/png'));
+          const mergedJpegUrl = mergedCanvas.toDataURL('image/jpeg', 0.95);
+          renderedPageImages.push(mergedJpegUrl);
+
+          pageRenderData.push({
+            pageIndex: i,
+            width: baseVp.width,
+            height: baseVp.height,
+            annotPngUrl: annotPngUrl,
+            mergedJpegUrl: mergedJpegUrl
+          });
         }
 
-        const modifiedBytes = await finalPdfDoc.save();
+        let modifiedBytes = null;
+        let savedSuccessfully = false;
+
+        // ขั้นตอนที่ 2: ทดลองบันทึกแบบฝังทับเดิมพร้อม ignoreEncryption: true
+        try {
+          const { PDFDocument } = PDFLib;
+          const finalPdfDoc = await PDFDocument.load(originalPdfBytes, { ignoreEncryption: true });
+          const pages = finalPdfDoc.getPages();
+
+          for (let i = 0; i < pages.length; i++) {
+            const data = pageRenderData[i];
+            if (data.annotPngUrl) {
+              const pngImage = await finalPdfDoc.embedPng(data.annotPngUrl);
+              pages[i].drawImage(pngImage, {
+                x: 0,
+                y: 0,
+                width: data.width,
+                height: data.height,
+              });
+            }
+          }
+
+          modifiedBytes = await finalPdfDoc.save();
+          savedSuccessfully = true;
+        } catch (vectorErr) {
+          console.warn("ไม่สามารถบันทึกทับไฟล์เดิมได้เนื่องจากติดการเข้ารหัส/ระบบป้องกัน:", vectorErr);
+        }
+
+        // หากไฟล์ติด Encryption หรือมีสิทธิ์ห้ามเซฟทับ ให้ใช้ระบบสร้าง PDF ใหม่ (Bypass Lock 100%)
+        if (!savedSuccessfully) {
+          const { PDFDocument } = PDFLib;
+          const freshPdfDoc = await PDFDocument.create();
+
+          for (let i = 0; i < pageRenderData.length; i++) {
+            const data = pageRenderData[i];
+            const newPage = freshPdfDoc.addPage([data.width, data.height]);
+            const embeddedJpg = await freshPdfDoc.embedJpg(data.mergedJpegUrl);
+            newPage.drawImage(embeddedJpg, {
+              x: 0,
+              y: 0,
+              width: data.width,
+              height: data.height,
+            });
+          }
+
+          modifiedBytes = await freshPdfDoc.save();
+        }
+
         if (currentExportedUrl) URL.revokeObjectURL(currentExportedUrl);
 
         currentExportedBlob = new Blob([modifiedBytes], { type: 'application/pdf' });
@@ -1089,7 +1135,7 @@
         const successModal = document.getElementById('download-success-modal');
         if (successModal) successModal.classList.remove('hidden');
         lucide.createIcons();
-        showToast("เตรียมไฟล์เสร็จเรียบร้อยแล้ว!", "success");
+        showToast("บันทึกไฟล์เรียบร้อยแล้ว!", "success");
 
       } catch (err) {
         console.error("ส่งออก PDF ล้มเหลว:", err);
